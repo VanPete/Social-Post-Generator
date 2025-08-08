@@ -14,7 +14,7 @@ def get_app_password():
         return st.secrets["APP_PASSWORD"]
     except (KeyError, FileNotFoundError, AttributeError):
         # Fall back to environment variables (for local development)
-        return os.getenv("APP_PASSWORD", "adcellerant2025")
+        return os.getenv("APP_PASSWORD", "Jax2021")
 
 # === File Configurations ===
 # Data file configurations - These files persist across all users and sessions
