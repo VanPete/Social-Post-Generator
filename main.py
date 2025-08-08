@@ -49,15 +49,32 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Get OpenAI API key
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+# Get OpenAI API key - Support both environment variables and Streamlit secrets
+def get_api_key():
+    """Get OpenAI API key from environment variables or Streamlit secrets."""
+    # Try Streamlit secrets first (for cloud deployment)
+    try:
+        return st.secrets["OPENAI_API_KEY"]
+    except (KeyError, FileNotFoundError):
+        # Fall back to environment variables (for local development)
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            st.error("⚠️ **OPENAI_API_KEY not found!**\n\n"
+                    "**For local development:** Add to your `.env` file:\n"
+                    "```\nOPENAI_API_KEY=your_api_key_here\n```\n\n"
+                    "**For Streamlit Cloud:** Add to app secrets:\n"
+                    "```toml\nOPENAI_API_KEY = \"your_api_key_here\"\n```")
+            st.stop()
+        return api_key
+
+OPENAI_API_KEY = get_api_key()
 
 # Initialize OpenAI client
 @st.cache_resource
 def initialize_openai_client():
     """Initialize OpenAI client with API key."""
     if not OPENAI_API_KEY:
-        st.error("OPENAI_API_KEY not found in environment variables. Please check your .env file.")
+        st.error("OPENAI_API_KEY configuration error. Please check your setup.")
         st.stop()
     
     client = openai.OpenAI(api_key=OPENAI_API_KEY)

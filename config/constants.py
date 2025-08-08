@@ -4,6 +4,19 @@ Configuration constants for the Social Post Generator application.
 """
 
 import os
+import streamlit as st
+
+# === Security Configuration ===
+def get_app_password():
+    """Get app password from environment variables or Streamlit secrets."""
+    # Try Streamlit secrets first (for cloud deployment)
+    try:
+        return st.secrets["APP_PASSWORD"]
+    except (KeyError, FileNotFoundError):
+        # Fall back to environment variables (for local development)
+        return os.getenv("APP_PASSWORD", "adcellerant2025")
+
+APP_PASSWORD = get_app_password()
 
 # === File Configurations ===
 # Data file configurations - These files persist across all users and sessions
@@ -12,15 +25,9 @@ USED_CAPTIONS_FILE = "used_captions.json"
 FEEDBACK_FILE = "user_feedback.json"
 STATS_FILE = "app_statistics.json"
 
-# === Security Configuration ===
-APP_PASSWORD = os.getenv("APP_PASSWORD", "adcellerant2025")
-
 # === Feature Flags ===
 # Clipboard functionality removed for cleaner UI
 CLIPBOARD_FEATURES_ENABLED = False
-
-# === OpenAI Configuration ===
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # === Page Configuration ===
 PAGE_CONFIG = {
