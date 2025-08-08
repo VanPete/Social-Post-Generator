@@ -72,42 +72,39 @@ class UIComponents:
         col1, col2 = st.columns(2)
         
         with col1:
-            # Get value from either the input key or the base key (for autofill compatibility)
-            business_name_value = st.session_state.get('business_name_input') or st.session_state.get('business_name') or ''
+            # For autofill compatibility, check base keys but don't set conflicting values
+            business_name_default = st.session_state.get('business_name', '')
             business_data['business_name'] = st.text_input(
                 "Business Name *",
-                value=business_name_value,
+                value=business_name_default,
                 placeholder="Auto-filled from website or enter manually",
                 help="This will be auto-filled when you analyze a website",
                 key="business_name_input"
             ) or ''
             
-            # Get value from either the input key or the base key (for autofill compatibility)
-            business_type_value = st.session_state.get('business_type_input') or st.session_state.get('business_type') or ''
+            business_type_default = st.session_state.get('business_type', '')
             business_data['business_type'] = st.text_input(
                 "Business Type *",
-                value=business_type_value,
+                value=business_type_default,
                 placeholder="e.g., Restaurant, Tech Startup, Marketing Agency",
                 help="Auto-detected from website content",
                 key="business_type_input"
             ) or ''
         
         with col2:
-            # Get value from either the input key or the base key (for autofill compatibility)
-            target_audience_value = st.session_state.get('target_audience_input') or st.session_state.get('target_audience') or ''
+            target_audience_default = st.session_state.get('target_audience', '')
             business_data['target_audience'] = st.text_input(
                 "Target Audience",
-                value=target_audience_value,
+                value=target_audience_default,
                 placeholder="e.g., Small business owners, Young professionals",
                 help="AI will analyze your website to identify your target customers",
                 key="target_audience_input"
             ) or ''
             
-            # Get value from either the input key or the base key (for autofill compatibility)
-            product_name_value = st.session_state.get('product_name_input') or st.session_state.get('product_name') or ''
+            product_name_default = st.session_state.get('product_name', '')
             business_data['product_name'] = st.text_input(
                 "Main Product/Service",
-                value=product_name_value,
+                value=product_name_default,
                 placeholder="e.g., Social Media Management, Web Design",
                 help="Primary offering - extracted from website services section",
                 key="product_name_input"
