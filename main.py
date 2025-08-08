@@ -55,7 +55,7 @@ def get_api_key():
     # Try Streamlit secrets first (for cloud deployment)
     try:
         return st.secrets["OPENAI_API_KEY"]
-    except (KeyError, FileNotFoundError):
+    except (KeyError, FileNotFoundError, AttributeError):
         # Fall back to environment variables (for local development)
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
@@ -67,17 +67,16 @@ def get_api_key():
             st.stop()
         return api_key
 
-OPENAI_API_KEY = get_api_key()
-
 # Initialize OpenAI client
 @st.cache_resource
 def initialize_openai_client():
     """Initialize OpenAI client with API key."""
-    if not OPENAI_API_KEY:
+    api_key = get_api_key()
+    if not api_key:
         st.error("OPENAI_API_KEY configuration error. Please check your setup.")
         st.stop()
     
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    client = openai.OpenAI(api_key=api_key)
     return client
 
 def start_over():
