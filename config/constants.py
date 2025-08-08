@@ -12,11 +12,9 @@ def get_app_password():
     # Try Streamlit secrets first (for cloud deployment)
     try:
         return st.secrets["APP_PASSWORD"]
-    except (KeyError, FileNotFoundError):
+    except (KeyError, FileNotFoundError, AttributeError):
         # Fall back to environment variables (for local development)
         return os.getenv("APP_PASSWORD", "adcellerant2025")
-
-APP_PASSWORD = get_app_password()
 
 # === File Configurations ===
 # Data file configurations - These files persist across all users and sessions

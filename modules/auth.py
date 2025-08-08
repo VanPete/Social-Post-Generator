@@ -4,7 +4,7 @@ Authentication module for the Social Post Generator application.
 """
 
 import streamlit as st
-from config.constants import APP_PASSWORD
+from config.constants import get_app_password
 from config.settings import SESSION_KEYS
 from utils.helpers import clear_session_keys
 
@@ -17,7 +17,8 @@ def check_password() -> bool:
     
     def password_entered():
         """Checks whether a password entered by the user is correct."""
-        if st.session_state["password"] == APP_PASSWORD:
+        app_password = get_app_password()
+        if st.session_state["password"] == app_password:
             st.session_state["password_correct"] = True
             del st.session_state["password"]  # don't store password
         else:
