@@ -110,6 +110,9 @@ def business_info_section(ui):
                         if business_info.get('product_service'):
                             st.session_state.product_name = business_info['product_service']
                         
+                        if business_info.get('description'):
+                            st.session_state.company_description = business_info['description']
+                        
                         # Show success message with what was extracted
                         extracted_fields = []
                         if business_info.get('company_name'):
@@ -120,6 +123,8 @@ def business_info_section(ui):
                             extracted_fields.append("Target Audience")
                         if business_info.get('product_service'):
                             extracted_fields.append("Product/Service")
+                        if business_info.get('description'):
+                            extracted_fields.append("Company Description")
                         
                         if extracted_fields:
                             st.success(f"Auto-filled: {', '.join(extracted_fields)}")
@@ -130,7 +135,8 @@ def business_info_section(ui):
                                     "business_name": st.session_state.get('business_name', 'Not set'),
                                     "business_type": st.session_state.get('business_type', 'Not set'),
                                     "target_audience": st.session_state.get('target_audience', 'Not set'),
-                                    "product_name": st.session_state.get('product_name', 'Not set')
+                                    "product_name": st.session_state.get('product_name', 'Not set'),
+                                    "company_description": st.session_state.get('company_description', 'Not set')
                                 })
                         else:
                             st.info("Website analyzed but limited information could be extracted. Please fill in details manually.")
@@ -153,7 +159,7 @@ def business_info_section(ui):
             if st.button("Clear", use_container_width=True):
                 keys_to_clear = [
                     'website_url', 'website_analysis_results', 
-                    'business_name', 'business_type', 'target_audience', 'product_name'
+                    'business_name', 'business_type', 'target_audience', 'product_name', 'company_description'
                 ]
                 for key in keys_to_clear:
                     if key in st.session_state:
@@ -164,15 +170,6 @@ def business_info_section(ui):
     
     # Business form with enhanced labels
     business_data = ui.create_business_form()
-    
-    # Show extraction results if available
-    if st.session_state.get('website_analysis_results'):
-        results = st.session_state.website_analysis_results
-        if results.get('success'):
-            business_info = results.get('business_info', {})
-            if business_info.get('description'):
-                with st.expander("AI-Extracted Business Description", expanded=False):
-                    st.write(business_info['description'])
     
     # Check if form is complete - handle None values properly
     required_fields = ['business_name', 'business_type']

@@ -122,9 +122,18 @@ def get_uploaded_images():
     return st.session_state.get('uploaded_images', [])
 
 def clear_uploaded_images():
-    """Clear uploaded images from session state."""
+    """Clear uploaded images and related data from session state."""
+    # Clear uploaded images
     if 'uploaded_images' in st.session_state:
         del st.session_state.uploaded_images
+    
+    # Clear generated captions when images are cleared
+    if 'generated_captions' in st.session_state:
+        del st.session_state.generated_captions
+    
+    # Clear debug logs
+    if 'debug_logs' in st.session_state:
+        del st.session_state.debug_logs
 
 # Legacy compatibility functions (simplified)
 def get_image_processor():

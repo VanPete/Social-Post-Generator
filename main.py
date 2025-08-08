@@ -355,6 +355,12 @@ def handle_main_content():
             st.markdown("### Generated Captions")
         
         ui.display_caption_results(st.session_state.generated_captions)
+    
+    # Display debug log if available
+    if st.session_state.get('debug_log'):
+        with st.expander("🔍 Debug Log (Click to expand)", expanded=False):
+            for debug_msg in st.session_state.debug_log:
+                st.text(debug_msg)
 
 def main():
     """Main application entry point."""

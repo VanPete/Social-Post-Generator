@@ -64,7 +64,8 @@ class WebsiteAnalyzer:
             # psutil not available, skip memory check
             limited_resources = False
             memory_gb = None
-        except:
+        except Exception:
+            # Any other error with psutil, skip memory check
             limited_resources = False
             memory_gb = None
         
@@ -113,15 +114,29 @@ class WebsiteAnalyzer:
             if not url.startswith(('http://', 'https://')):
                 url = 'https://' + url
             
+            # Show progress for large websites
+            if hasattr(st, 'empty'):
+                progress_placeholder = st.empty()
+                with progress_placeholder:
+                    st.info("🔍 Analyzing website... Large sites may take up to 15 seconds")
+            
             # Cloud-specific optimization: try quick basic extraction first
             if self.is_cloud:
                 try:
                     # Quick attempt with minimal processing for cloud
+                    if hasattr(st, 'empty'):
+                        with progress_placeholder:
+                            st.info("☁️ Cloud environment detected - using optimized processing...")
+                    
                     content, final_url = self._fetch_with_headers_minimal(url)
                     if content:
                         soup = BeautifulSoup(content, 'html.parser')
                         # Use basic extraction in cloud to avoid timeouts
                         business_info = self._extract_business_info_basic(soup, final_url)
+                        
+                        if hasattr(st, 'empty'):
+                            progress_placeholder.empty()
+                        
                         return {
                             'success': True,
                             'url': final_url,
@@ -129,6 +144,9 @@ class WebsiteAnalyzer:
                         }
                 except Exception as cloud_error:
                     # Continue with regular flow if quick method fails
+                    if hasattr(st, 'empty'):
+                        with progress_placeholder:
+                            st.info("⚠️ Quick processing failed, trying comprehensive analysis...")
                     pass
             
             # Try multiple strategies to bypass 403 errors
@@ -137,6 +155,9 @@ class WebsiteAnalyzer:
             
             # Strategy 1: Standard request with rotating headers
             try:
+                if hasattr(st, 'empty'):
+                    with progress_placeholder:
+                        st.info("📡 Fetching website content...")
                 content, final_url = self._fetch_with_headers(url)
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 403:
@@ -162,10 +183,20 @@ class WebsiteAnalyzer:
             
             # Use GPT to enhance extraction if client available and not in cloud (to avoid timeouts)
             if self.openai_client and raw_content and not self.is_cloud:
+                if hasattr(st, 'empty'):
+                    with progress_placeholder:
+                        st.info("🤖 Enhancing analysis with AI...")
                 business_info = self._extract_with_gpt(raw_content, final_url)
             else:
                 # Fallback to basic extraction (always use in cloud)
+                if hasattr(st, 'empty'):
+                    with progress_placeholder:
+                        st.info("📊 Extracting business information...")
                 business_info = self._extract_business_info_basic(soup, final_url)
+            
+            # Clear progress indicator
+            if hasattr(st, 'empty'):
+                progress_placeholder.empty()
             
             return {
                 'success': True,
@@ -174,6 +205,10 @@ class WebsiteAnalyzer:
             }
             
         except requests.RequestException as e:
+            # Clear progress indicator on error
+            if hasattr(st, 'empty') and 'progress_placeholder' in locals():
+                progress_placeholder.empty()
+            
             error_msg = f"Failed to fetch website: {str(e)}"
             if self.is_cloud:
                 error_msg += " (Cloud environment may have network restrictions)"
@@ -182,6 +217,10 @@ class WebsiteAnalyzer:
                 'error': error_msg
             }
         except Exception as e:
+            # Clear progress indicator on error
+            if hasattr(st, 'empty') and 'progress_placeholder' in locals():
+                progress_placeholder.empty()
+            
             error_msg = f"Error analyzing website: {str(e)}"
             if self.is_cloud:
                 error_msg += " (Cloud processing timeout or resource limit)"
@@ -193,18 +232,18 @@ class WebsiteAnalyzer:
     def _fetch_with_headers(self, url: str) -> tuple:
         """Fetch website content with randomized headers."""
         headers = self._get_headers()
-        # Adjust timeout based on environment
-        timeout = 5 if self.is_cloud else 8
+        # Adjust timeout based on environment - increased for large websites
+        timeout = 12 if self.is_cloud else 15
         response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
         response.raise_for_status()
         return response.content, response.url
     
     def _fetch_with_headers_minimal(self, url: str) -> tuple:
-        """Minimal fetch for cloud environments with very short timeout."""
+        """Minimal fetch for cloud environments with extended timeout for large sites."""
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
-        response = requests.get(url, headers=headers, timeout=3, allow_redirects=True)
+        response = requests.get(url, headers=headers, timeout=8, allow_redirects=True)
         response.raise_for_status()
         return response.content, response.url
     
@@ -219,8 +258,8 @@ class WebsiteAnalyzer:
         else:
             time.sleep(random.uniform(0.5, 1.5))
         
-        # Adjust timeout based on environment
-        timeout = 4 if self.is_cloud else 6
+        # Adjust timeout based on environment - increased for large websites
+        timeout = 10 if self.is_cloud else 12
         response = session.get(url, timeout=timeout, allow_redirects=True)
         response.raise_for_status()
         return response.content, response.url
@@ -247,7 +286,7 @@ class WebsiteAnalyzer:
                 headers = self._get_headers()
                 time.sleep(random.uniform(0.5, 2))  # Random delay
                 
-                response = requests.get(variation, headers=headers, timeout=10, allow_redirects=True)
+                response = requests.get(variation, headers=headers, timeout=15, allow_redirects=True)
                 if response.status_code == 200:
                     return response.content, response.url
             except:
@@ -257,7 +296,7 @@ class WebsiteAnalyzer:
         try:
             domain_url = f"{parsed.scheme}://{parsed.netloc}"
             headers = self._get_headers()
-            response = requests.get(domain_url, headers=headers, timeout=10, allow_redirects=True)
+            response = requests.get(domain_url, headers=headers, timeout=15, allow_redirects=True)
             if response.status_code == 200:
                 return response.content, response.url
         except:
@@ -336,7 +375,7 @@ Example format:
                 ],
                 max_tokens=500,
                 temperature=0.3,
-                timeout=10  # Add timeout for cloud compatibility
+                timeout=15  # Extended timeout for large websites
             )
             
             # Parse JSON response

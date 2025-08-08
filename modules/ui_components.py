@@ -109,13 +109,24 @@ class UIComponents:
                 help="Primary offering - extracted from website services section",
                 key="product_name_input"
             ) or ''
+
+        # Company Description - full width below the two columns
+        description_default = st.session_state.get('company_description', '')
+        business_data['company_description'] = st.text_area(
+            "Company Description",
+            value=description_default,
+            placeholder="Brief description of your company and what makes it unique...",
+            help="Describe your company's mission, values, or what sets you apart",
+            key="company_description_input",
+            height=100
+        ) or ''
         
         # Update session state - ensure no None values
         for key, value in business_data.items():
             st.session_state[key] = value or ''
-        
+
         return business_data
-    
+
     def create_caption_settings(self) -> Dict[str, Any]:
         """Create caption generation settings."""
         settings = {}
@@ -139,38 +150,98 @@ class UIComponents:
         
         return settings
     
-    def display_caption_results(self, captions: list) -> None:
+    def display_caption_results(self, captions_data) -> None:
         """Display generated captions with simple text area for editing and copying."""
-        if not captions:
+        if not captions_data:
             st.info("No captions generated yet. Fill in business details and click Generate Captions.")
             return
         
-        char_limit = st.session_state.get('platform_char_limit')
-        
-        for i, caption in enumerate(captions, 1):
-            with st.container():
-                st.markdown(f"**Caption {i}:**")
+        # Handle both old format (simple list) and new format (list of image caption objects)
+        if isinstance(captions_data, list) and len(captions_data) > 0:
+            # Check if it's the new format with image data
+            if isinstance(captions_data[0], dict) and 'image_name' in captions_data[0]:
+                # New format: multiple images with captions
+                st.info(f"📸 Generated captions for {len(captions_data)} image(s)!")
                 
-                # Character count display
-                char_count_html = self.show_character_count(caption, char_limit)
-                st.markdown(char_count_html, unsafe_allow_html=True)
-                
-                # Editable caption area - users can copy with Ctrl+A, Ctrl+C
-                edited_caption = st.text_area(
-                    f"Edit Caption {i}",
-                    value=caption,
-                    height=100,
-                    label_visibility="collapsed",
-                    key=f"caption_edit_{i}_{st.session_state.get('session_id', 'default')}"
-                )
-                
-                # Show updated character count for edited caption if changed
-                if edited_caption != caption:
-                    updated_char_count_html = self.show_character_count(edited_caption, char_limit)
-                    st.markdown(f"Updated: {updated_char_count_html}", unsafe_allow_html=True)
-                
-                if i < len(captions):
+                for img_idx, image_data in enumerate(captions_data, 1):
+                    image_name = image_data['image_name']
+                    image_file = image_data['image_file']
+                    captions = image_data['captions']
+                    
+                    # Create expandable section for each image
+                    with st.expander(f"Image {img_idx}: {image_name}", expanded=True):
+                        # Display the image
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        with col2:
+                            st.image(image_file, caption=f"Image {img_idx}: {image_name}", use_container_width=True)
+                        
+                        st.markdown("---")
+                        
+                        # Display captions for this image
+                        char_limit = st.session_state.get('platform_char_limit')
+                        
+                        for i, caption in enumerate(captions, 1):
+                            with st.container():
+                                st.markdown(f"**Caption {i} for {image_name}:**")
+                                
+                                # Character count display
+                                char_count_html = self.show_character_count(caption, char_limit)
+                                st.markdown(char_count_html, unsafe_allow_html=True)
+                                
+                                # Editable caption area
+                                edited_caption = st.text_area(
+                                    f"Edit Caption {i} for Image {img_idx}",
+                                    value=caption,
+                                    height=100,
+                                    label_visibility="collapsed",
+                                    key=f"caption_edit_img{img_idx}_{i}_{st.session_state.get('session_id', 'default')}"
+                                )
+                                
+                                # Show updated character count for edited caption if changed
+                                if edited_caption != caption:
+                                    updated_char_count_html = self.show_character_count(edited_caption, char_limit)
+                                    st.markdown(f"Updated: {updated_char_count_html}", unsafe_allow_html=True)
+                                
+                                if i < len(captions):
+                                    st.markdown("---")
+            else:
+                # Old format: simple list of captions (no images or single image)
+                uploaded_images = st.session_state.get('uploaded_images', [])
+                if uploaded_images:
+                    st.info("📸 These captions were generated using your uploaded image for context!")
+                    
+                    # Display the image used for caption generation
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col2:
+                        st.image(uploaded_images[0], caption="Image used for caption generation", use_container_width=True)
                     st.markdown("---")
+                
+                char_limit = st.session_state.get('platform_char_limit')
+                
+                for i, caption in enumerate(captions_data, 1):
+                    with st.container():
+                        st.markdown(f"**Caption {i}:**")
+                        
+                        # Character count display
+                        char_count_html = self.show_character_count(caption, char_limit)
+                        st.markdown(char_count_html, unsafe_allow_html=True)
+                        
+                        # Editable caption area - users can copy with Ctrl+A, Ctrl+C
+                        edited_caption = st.text_area(
+                            f"Edit Caption {i}",
+                            value=caption,
+                            height=100,
+                            label_visibility="collapsed",
+                            key=f"caption_edit_{i}_{st.session_state.get('session_id', 'default')}"
+                        )
+                        
+                        # Show updated character count for edited caption if changed
+                        if edited_caption != caption:
+                            updated_char_count_html = self.show_character_count(edited_caption, char_limit)
+                            st.markdown(f"Updated: {updated_char_count_html}", unsafe_allow_html=True)
+                        
+                        if i < len(captions_data):
+                            st.markdown("---")
     
     def create_ai_model_selector(self) -> str:
         """Create AI model selection component."""

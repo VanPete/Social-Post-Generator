@@ -248,6 +248,7 @@ class SessionManager:
             st.session_state['business_type'] = profile.business_type
             st.session_state['target_audience'] = profile.target_audience
             st.session_state['website_url'] = profile.website_url
+            st.session_state['company_description'] = profile.description
             return True
         return False
     
@@ -258,7 +259,7 @@ class SessionManager:
             'business_type': st.session_state.get('business_type', ''),
             'target_audience': st.session_state.get('target_audience', ''),
             'website_url': st.session_state.get('website_url', ''),
-            'description': st.session_state.get('description', '')
+            'description': st.session_state.get('company_description', '')
         }
         
         return self.company_manager.update_profile(company_id, session_data)
