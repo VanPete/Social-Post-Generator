@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional
 import openai
 import random
 import time
+import os
 
 class WebsiteAnalyzer:
     """Analyzes websites to extract business information using web scraping and GPT."""
@@ -26,6 +27,19 @@ class WebsiteAnalyzer:
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
         ]
         self.openai_client = openai_client
+        # Detect cloud environment for optimized settings
+        self.is_cloud = self._detect_cloud_environment()
+    
+    def _detect_cloud_environment(self):
+        """Detect if running in a cloud environment like Streamlit Cloud."""
+        cloud_indicators = [
+            'STREAMLIT_SHARING_MODE',
+            'STREAMLIT_CLOUD', 
+            'HEROKUAPP',
+            'DYNO',
+            'GITHUB_ACTIONS'
+        ]
+        return any(os.getenv(indicator) for indicator in cloud_indicators)
     
     def _get_headers(self):
         """Get randomized headers to avoid bot detection."""
@@ -105,7 +119,9 @@ class WebsiteAnalyzer:
     def _fetch_with_headers(self, url: str) -> tuple:
         """Fetch website content with randomized headers."""
         headers = self._get_headers()
-        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        # Adjust timeout based on environment
+        timeout = 5 if self.is_cloud else 8
+        response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
         response.raise_for_status()
         return response.content, response.url
     
@@ -114,10 +130,15 @@ class WebsiteAnalyzer:
         session = requests.Session()
         session.headers.update(self._get_headers())
         
-        # Add small delay to appear more human-like
-        time.sleep(random.uniform(1, 3))
+        # Adjust delay based on environment
+        if self.is_cloud:
+            time.sleep(random.uniform(0.2, 0.8))  # Shorter delay for cloud
+        else:
+            time.sleep(random.uniform(0.5, 1.5))
         
-        response = session.get(url, timeout=15, allow_redirects=True)
+        # Adjust timeout based on environment
+        timeout = 4 if self.is_cloud else 6
+        response = session.get(url, timeout=timeout, allow_redirects=True)
         response.raise_for_status()
         return response.content, response.url
     
@@ -231,7 +252,8 @@ Example format:
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=500,
-                temperature=0.3
+                temperature=0.3,
+                timeout=10  # Add timeout for cloud compatibility
             )
             
             # Parse JSON response

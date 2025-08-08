@@ -3,6 +3,7 @@ Business info and website analysis for Social Post Generator
 Enhanced with GPT-powered auto-fill capabilities and 403 error handling
 """
 import streamlit as st
+import time
 from modules.website_analysis import get_website_analyzer
 from modules.companies import get_session_manager
 
@@ -56,14 +57,32 @@ def business_info_section(ui):
                         analyzer = get_website_analyzer()
                         st.sidebar.warning(f"⚠️ Using basic analysis (Error: {str(e)[:30]}...)")
                     
-                    results = analyzer.analyze_website(website_url)
+                    # Add timeout protection for cloud environments
+                    try:
+                        # Set a progress bar for user feedback
+                        progress_bar = st.progress(0)
+                        progress_bar.progress(25, "Fetching website content...")
+                        
+                        results = analyzer.analyze_website(website_url)
+                        
+                        progress_bar.progress(100, "Analysis complete!")
+                        time.sleep(0.5)  # Brief pause to show completion
+                        progress_bar.empty()  # Remove progress bar
+                        
+                    except Exception as analysis_error:
+                        progress_bar.empty()
+                        st.error(f"Analysis failed: {str(analysis_error)[:100]}")
+                        st.info("This may be due to network restrictions in cloud environments. The website works fine in localhost.")
+                        results = None
                     
                     # Debug info for troubleshooting
                     if st.sidebar.checkbox("Show Debug Info", value=False):
                         st.sidebar.json({
                             "analyzer_type": "GPT" if hasattr(analyzer, 'openai_client') and analyzer.openai_client else "Basic",
+                            "cloud_environment": getattr(analyzer, 'is_cloud', 'Unknown'),
                             "results_success": results.get('success', False) if results else False,
-                            "extracted_fields": len(results.get('business_info', {})) if results and results.get('success') else 0
+                            "extracted_fields": len(results.get('business_info', {})) if results and results.get('success') else 0,
+                            "error_message": results.get('error', 'None') if results and not results.get('success') else 'None'
                         })
                     
                     if results and results.get('success'):
