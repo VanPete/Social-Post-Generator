@@ -91,18 +91,22 @@ def business_info_section(ui):
                         # Enhanced auto-fill with all extracted fields
                         business_info = results.get('business_info', {})
                         
-                        # Auto-fill all available fields
+                        # Auto-fill all available fields - also set the input keys
                         if business_info.get('company_name'):
                             st.session_state.business_name = business_info['company_name']
+                            st.session_state.business_name_input = business_info['company_name']
                         
                         if business_info.get('business_type'):
                             st.session_state.business_type = business_info['business_type']
+                            st.session_state.business_type_input = business_info['business_type']
                         
                         if business_info.get('target_audience'):
                             st.session_state.target_audience = business_info['target_audience']
+                            st.session_state.target_audience_input = business_info['target_audience']
                         
                         if business_info.get('product_service'):
                             st.session_state.product_name = business_info['product_service']
+                            st.session_state.product_name_input = business_info['product_service']
                         
                         # Show success message with what was extracted
                         extracted_fields = []
@@ -117,6 +121,15 @@ def business_info_section(ui):
                         
                         if extracted_fields:
                             st.success(f"Auto-filled: {', '.join(extracted_fields)}")
+                            # Debug: Show what was actually set in session state
+                            if st.sidebar.checkbox("Show Autofill Debug", value=False):
+                                st.sidebar.write("Session State After Autofill:")
+                                st.sidebar.json({
+                                    "business_name": st.session_state.get('business_name', 'Not set'),
+                                    "business_name_input": st.session_state.get('business_name_input', 'Not set'),
+                                    "business_type": st.session_state.get('business_type', 'Not set'),
+                                    "business_type_input": st.session_state.get('business_type_input', 'Not set')
+                                })
                         else:
                             st.info("Website analyzed but limited information could be extracted. Please fill in details manually.")
                         
