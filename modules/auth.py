@@ -50,7 +50,7 @@ def logout_user():
     cleared_count = clear_session_keys(SESSION_KEYS["AUTH_KEYS"])
     
     if cleared_count > 0:
-        st.success(f"✅ Logged out successfully! ({cleared_count} session items cleared)")
+        st.success(f"Logged out successfully! ({cleared_count} session items cleared)")
     
     st.rerun()
 
@@ -81,7 +81,7 @@ def _show_login_form(password_callback):
 def _show_login_error(password_callback):
     """Show the login form with error message."""
     st.markdown("## 🔐 Access Required")
-    st.error("❌ Incorrect password. Please try again.")
+    st.error("Incorrect password. Please try again.")
     st.info("This application requires a password to access. Please contact Maddie Stitt for access.")
     st.text_input(
         "Password", 

@@ -33,7 +33,7 @@ if not exist ".env" (
     exit /b
 )
 echo Starting local server...
-streamlit run social_post_generator.py --server.port 8501
+streamlit run main.py --server.port 8501
 goto end
 
 :deploy_streamlit

@@ -162,20 +162,20 @@ def count_characters(text: str) -> int:
     return len(text.strip())
 
 def get_platform_icon(char_count: int) -> str:
-    """Get appropriate icon based on character count for different platforms.
+    """Get appropriate status indicator based on character count for different platforms.
     
     Args:
         char_count: Number of characters
         
     Returns:
-        Icon string
+        Status string
     """
     if char_count <= 280:
-        return "✅"
+        return "GOOD"
     elif char_count <= 400:
-        return "⚠️"
+        return "WARNING"
     else:
-        return "❌"
+        return "TOO_LONG"
 
 def clear_session_keys(keys: List[str]) -> int:
     """Clear specified keys from Streamlit session state.

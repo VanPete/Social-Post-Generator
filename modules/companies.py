@@ -1,424 +1,336 @@
 #!/usr/bin/env python3
 """
-Company profile management module for storing and managing business profiles.
+Company profile management for Social Post Generator
 """
-
-from datetime import datetime
-from typing import Dict, List, Optional, Any
 import streamlit as st
+import uuid
+from typing import Dict, List, Optional, Any
+import json
+from datetime import datetime
 
-from config.constants import COMPANY_DATA_FILE
-from config.settings import CompanyProfile, SESSION_KEYS
-from utils.file_ops import load_json_file, save_json_file
-from utils.helpers import get_current_timestamp, clear_session_keys
+class CompanyProfile:
+    """Represents a company profile with business information."""
+    
+    def __init__(self, company_id: str = None):
+        self.company_id = company_id or str(uuid.uuid4())
+        self.name = ""
+        self.business_type = ""
+        self.target_audience = ""
+        self.website_url = ""
+        self.description = ""
+        self.created_at = None
+        self.updated_at = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert profile to dictionary."""
+        return {
+            'company_id': self.company_id,
+            'name': self.name,
+            'business_type': self.business_type,
+            'target_audience': self.target_audience,
+            'website_url': self.website_url,
+            'description': self.description,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
+        }
+    
+    def from_dict(self, data: Dict[str, Any]):
+        """Load profile from dictionary."""
+        self.company_id = data.get('company_id', self.company_id)
+        self.name = data.get('name', '')
+        self.business_type = data.get('business_type', '')
+        self.target_audience = data.get('target_audience', '')
+        self.website_url = data.get('website_url', '')
+        self.description = data.get('description', '')
+        self.created_at = data.get('created_at')
+        self.updated_at = data.get('updated_at')
+        return self
 
-class CompanyProfileManager:
-    """Manages company profiles including CRUD operations and session management."""
+
+class CompanyManager:
+    """Manages company profiles with persistent file storage."""
     
-    def __init__(self):
-        self.file_path = COMPANY_DATA_FILE
+    def __init__(self, profiles_file: str = "company_profiles.json"):
+        self.profiles_file = profiles_file
+        self.profiles = {}
+        self.load_profiles()
     
-    def load_company_profiles(self) -> Dict[str, Any]:
-        """Load saved company profiles from JSON file.
-        
-        Company profiles are shared across all users and persist across sessions.
-        
-        Returns:
-            Dict containing company profiles
-        """
-        return load_json_file(self.file_path)
+    def load_profiles(self):
+        """Load company profiles from JSON file."""
+        try:
+            with open(self.profiles_file, 'r', encoding='utf-8') as f:
+                profiles_data = json.load(f)
+                
+            # Convert old format to new format if needed
+            for company_name, data in profiles_data.items():
+                if isinstance(data, dict):
+                    # Convert old format to new CompanyProfile format
+                    profile = CompanyProfile()
+                    profile.name = company_name
+                    profile.business_type = data.get('business_type', '')
+                    profile.target_audience = data.get('target_audience', '')
+                    profile.website_url = data.get('website_url', '')
+                    profile.description = data.get('description', '')
+                    
+                    # Use existing timestamps if available, otherwise set current time
+                    profile.created_at = data.get('created_at', datetime.now().isoformat())
+                    profile.updated_at = data.get('updated_at', datetime.now().isoformat())
+                    
+                    self.profiles[profile.company_id] = profile
+                    
+        except FileNotFoundError:
+            # Create empty profiles file if it doesn't exist
+            self.profiles = {}
+            self.save_profiles()
+        except json.JSONDecodeError:
+            print(f"Error loading {self.profiles_file}. Starting with empty profiles.")
+            self.profiles = {}
     
-    def save_company_profiles(self, profiles: Dict[str, Any]) -> bool:
-        """Save company profiles to JSON file.
-        
-        Args:
-            profiles: Dictionary of company profiles
+    def save_profiles(self):
+        """Save company profiles to JSON file."""
+        try:
+            # Convert to old format for backward compatibility
+            profiles_data = {}
+            for profile in self.profiles.values():
+                profiles_data[profile.name] = {
+                    'business_input': profile.name,
+                    'business_type': profile.business_type,
+                    'target_audience': profile.target_audience,
+                    'website_url': profile.website_url,
+                    'description': profile.description,
+                    'created_at': profile.created_at,
+                    'updated_at': profile.updated_at
+                }
             
-        Returns:
-            True if successful, False otherwise
-        """
-        return save_json_file(self.file_path, profiles)
-    
-    def save_company_profile(self, company_name: str, profile_data: Dict[str, Any]) -> bool:
-        """Save a single company profile with timestamp tracking.
-        
-        Args:
-            company_name: Name of the company
-            profile_data: Profile data dictionary
+            with open(self.profiles_file, 'w', encoding='utf-8') as f:
+                json.dump(profiles_data, f, indent=2, ensure_ascii=False)
+                
+            # Also save to session state for backward compatibility
+            if 'company_profiles' not in st.session_state:
+                st.session_state.company_profiles = {}
+            st.session_state.company_profiles.update(profiles_data)
             
-        Returns:
-            True if successful, False otherwise
-        """
-        if not company_name or not profile_data:
-            return False
-        
-        profiles = self.load_company_profiles()
-        
-        # Add timestamps for tracking
-        profile_data.update({
-            'saved_date': get_current_timestamp(),
-            'last_used': get_current_timestamp()
-        })
-        
-        profiles[company_name] = profile_data
-        return self.save_company_profiles(profiles)
+        except Exception as e:
+            print(f"Error saving profiles: {e}")
     
-    def get_company_profile(self, company_name: str) -> Optional[Dict[str, Any]]:
-        """Get a specific company profile and update last used timestamp.
+    def create_profile(self, name: str) -> CompanyProfile:
+        """Create a new company profile."""
+        profile = CompanyProfile()
+        profile.name = name
+        profile.created_at = datetime.now().isoformat()
         
-        Args:
-            company_name: Name of the company
-            
-        Returns:
-            Company profile data or None if not found
-        """
-        if not company_name:
-            return None
-        
-        profiles = self.load_company_profiles()
-        if company_name in profiles:
-            # Update last used timestamp
-            profiles[company_name]['last_used'] = get_current_timestamp()
-            self.save_company_profiles(profiles)
-            return profiles[company_name]
-        
-        return None
+        self.profiles[profile.company_id] = profile
+        self.save_profiles()
+        return profile
     
-    def delete_company_profile(self, company_name: str) -> bool:
-        """Delete a company profile from storage.
-        
-        Args:
-            company_name: Name of the company to delete
-            
-        Returns:
-            True if deleted, False if not found or error
-        """
-        if not company_name:
-            return False
-        
-        profiles = self.load_company_profiles()
-        if company_name in profiles:
-            del profiles[company_name]
-            return self.save_company_profiles(profiles)
-        
+    def get_profile(self, company_id: str) -> Optional[CompanyProfile]:
+        """Get a company profile by ID."""
+        return self.profiles.get(company_id)
+    
+    def update_profile(self, company_id: str, data: Dict[str, Any]) -> bool:
+        """Update a company profile."""
+        if company_id in self.profiles:
+            profile = self.profiles[company_id]
+            for key, value in data.items():
+                if hasattr(profile, key):
+                    setattr(profile, key, value)
+            profile.updated_at = datetime.now().isoformat()
+            self.save_profiles()
+            return True
         return False
     
-    def get_company_names(self) -> List[str]:
-        """Get list of all company names.
-        
-        Returns:
-            Sorted list of company names
-        """
-        profiles = self.load_company_profiles()
-        return sorted(list(profiles.keys()))
+    def delete_profile(self, company_id: str) -> bool:
+        """Delete a company profile."""
+        if company_id in self.profiles:
+            del self.profiles[company_id]
+            self.save_profiles()
+            return True
+        return False
     
-    def company_exists(self, company_name: str) -> bool:
-        """Check if a company profile exists.
-        
-        Args:
-            company_name: Name of the company
-            
-        Returns:
-            True if exists, False otherwise
-        """
-        profiles = self.load_company_profiles()
-        return company_name in profiles
+    def list_profiles(self) -> List[CompanyProfile]:
+        """Get all company profiles."""
+        return list(self.profiles.values())
     
-    def get_recent_companies(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """Get recently used companies.
+    def get_recent_companies(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent companies in the format expected by main.py."""
+        profiles = self.list_profiles()
         
-        Args:
-            limit: Maximum number of companies to return
-            
-        Returns:
-            List of recent company profiles with metadata
-        """
-        profiles = self.load_company_profiles()
-        company_list = []
+        # Sort by updated_at or created_at, most recent first
+        sorted_profiles = sorted(profiles, key=lambda p: p.updated_at or p.created_at or '', reverse=True)
         
-        for name, profile in profiles.items():
-            last_used = profile.get('last_used', '')
-            company_list.append({
-                'name': name,
-                'last_used': last_used,
-                'profile': profile
-            })
-        
-        # Sort by last_used date (most recent first)
-        company_list.sort(key=lambda x: x['last_used'], reverse=True)
-        return company_list[:limit]
-    
-    def search_companies(self, search_term: str) -> List[str]:
-        """Search for companies by name.
-        
-        Args:
-            search_term: Term to search for
-            
-        Returns:
-            List of matching company names
-        """
-        if not search_term:
-            return self.get_company_names()
-        
-        profiles = self.load_company_profiles()
-        matches = []
-        
-        search_lower = search_term.lower()
-        for company_name in profiles:
-            if search_lower in company_name.lower():
-                matches.append(company_name)
-        
-        return sorted(matches)
-    
-    def create_profile_from_settings(self, settings: Dict[str, Any]) -> CompanyProfile:
-        """Create a CompanyProfile object from current settings.
-        
-        Args:
-            settings: Current session settings dictionary
-            
-        Returns:
-            CompanyProfile object
-        """
-        return CompanyProfile(
-            business_input=settings.get('business_input', ''),
-            website_url=settings.get('website_url', ''),
-            caption_style=settings.get('caption_style', 'Professional'),
-            caption_length=settings.get('caption_length', 'Medium (4-6 sentences)'),
-            use_premium_model=settings.get('use_premium_model', False),
-            include_cta=settings.get('include_cta', True),
-            focus_keywords=settings.get('focus_keywords', ''),
-            avoid_words=settings.get('avoid_words', ''),
-            target_audience=settings.get('target_audience', 'General'),
-            text_only_mode=settings.get('text_only_mode', False),
-            character_limit_preference=settings.get('character_limit_preference', 'No limit'),
-            captions_generated_count=1,
-            website_analysis=st.session_state.get('website_analysis')
-        )
-    
-    def create_profile_data_from_settings(self, settings: Dict[str, Any]) -> Dict[str, Any]:
-        """Create standardized profile data dictionary from current settings.
-        
-        Args:
-            settings: Current session settings dictionary
-            
-        Returns:
-            Standardized profile data with all required fields
-        """
-        return {
-            'business_input': settings.get('business_input', ''),
-            'website_url': settings.get('website_url', ''),
-            'caption_style': settings.get('caption_style', 'Professional'),
-            'caption_length': settings.get('caption_length', 'Medium (4-6 sentences)'),
-            'use_premium_model': settings.get('use_premium_model', False),
-            'include_cta': settings.get('include_cta', True),
-            'focus_keywords': settings.get('focus_keywords', ''),
-            'avoid_words': settings.get('avoid_words', ''),
-            'target_audience': settings.get('target_audience', 'General'),
-            'text_only_mode': settings.get('text_only_mode', False),
-            'character_limit_preference': settings.get('character_limit_preference', 'No limit'),
-            'captions_generated_count': 1,
-            'website_analysis': st.session_state.get('website_analysis')
-        }
-    
-    def update_company_usage(self, company_name: str) -> bool:
-        """Update the last used timestamp and usage count for a company.
-        
-        Args:
-            company_name: Name of the company
-            
-        Returns:
-            True if updated, False if not found or error
-        """
-        profiles = self.load_company_profiles()
-        
-        if company_name not in profiles:
-            return False
-        
-        profile = profiles[company_name]
-        profile['last_used'] = get_current_timestamp()
-        profile['captions_generated_count'] = profile.get('captions_generated_count', 0) + 1
-        
-        profiles[company_name] = profile
-        return self.save_company_profiles(profiles)
-    
-    def get_company_stats(self) -> Dict[str, Any]:
-        """Get statistics about stored company profiles.
-        
-        Returns:
-            Dictionary containing company statistics
-        """
-        profiles = self.load_company_profiles()
-        
-        if not profiles:
-            return {
-                'total_companies': 0,
-                'most_recent': None,
-                'most_used': None,
-                'total_captions_generated': 0
+        # Convert to the format expected by main.py
+        recent_companies = []
+        for profile in sorted_profiles[:limit]:
+            company_data = {
+                'name': profile.name,
+                'profile': {
+                    'business_input': profile.name,
+                    'business_type': profile.business_type,
+                    'target_audience': profile.target_audience,
+                    'website_url': profile.website_url,
+                    'description': profile.description
+                }
             }
+            recent_companies.append(company_data)
         
-        # Calculate stats
-        total_captions = 0
-        most_used_company = None
-        most_used_count = 0
-        most_recent_company = None
-        most_recent_date = None
-        
-        for name, profile in profiles.items():
-            # Count total captions
-            captions_count = profile.get('captions_generated_count', 0)
-            total_captions += captions_count
-            
-            # Find most used
-            if captions_count > most_used_count:
-                most_used_count = captions_count
-                most_used_company = name
-            
-            # Find most recent
-            last_used = profile.get('last_used', '')
-            if last_used and (most_recent_date is None or last_used > most_recent_date):
-                most_recent_date = last_used
-                most_recent_company = name
-        
-        return {
-            'total_companies': len(profiles),
-            'most_recent': most_recent_company,
-            'most_used': most_used_company,
-            'total_captions_generated': total_captions
-        }
+        return recent_companies
     
-    def export_company_profiles(self) -> Optional[str]:
-        """Export company profiles to CSV format.
+    def save_company_profile(self, company_name: str, profile_data: Dict[str, Any]) -> bool:
+        """Save a company profile with the given name and data."""
+        try:
+            # Check if company already exists by name
+            existing_profile = None
+            for profile in self.profiles.values():
+                if profile.name.lower() == company_name.lower():
+                    existing_profile = profile
+                    break
+            
+            if existing_profile:
+                # Update existing profile
+                existing_profile.business_type = profile_data.get('business_type', '')
+                existing_profile.target_audience = profile_data.get('target_audience', '')
+                existing_profile.website_url = profile_data.get('website_url', '')
+                existing_profile.description = profile_data.get('description', '')
+                existing_profile.updated_at = datetime.now().isoformat()
+            else:
+                # Create new profile
+                new_profile = CompanyProfile()
+                new_profile.name = company_name
+                new_profile.business_type = profile_data.get('business_type', '')
+                new_profile.target_audience = profile_data.get('target_audience', '')
+                new_profile.website_url = profile_data.get('website_url', '')
+                new_profile.description = profile_data.get('description', '')
+                new_profile.created_at = datetime.now().isoformat()
+                new_profile.updated_at = datetime.now().isoformat()
+                
+                self.profiles[new_profile.company_id] = new_profile
+            
+            # Save to persistent file storage
+            self.save_profiles()
+            return True
+            
+        except Exception as e:
+            print(f"Error saving company profile: {e}")
+            return False
+    
+    def populate_from_website_analysis(self, analysis_results: Dict[str, Any]):
+        """Populate session state from website analysis."""
+        if not analysis_results.get('success'):
+            return
         
-        Returns:
-            CSV string or None if no data
-        """
-        profiles = self.load_company_profiles()
+        business_info = analysis_results.get('business_info', {})
         
-        if not profiles:
-            return None
+        # Map website analysis to session state
+        mapping = {
+            'business_name': business_info.get('company_name', ''),
+            'business_type': business_info.get('business_type', ''),
+            'target_audience': business_info.get('target_audience', ''),
+            'description': business_info.get('description', '')
+        }
         
-        from utils.helpers import export_data_to_csv
-        
-        # Convert to list format for export
-        data = []
-        for name, profile in profiles.items():
-            data.append({
-                'company_name': name,
-                'business_input': profile.get('business_input', ''),
-                'website_url': profile.get('website_url', ''),
-                'caption_style': profile.get('caption_style', ''),
-                'caption_length': profile.get('caption_length', ''),
-                'target_audience': profile.get('target_audience', ''),
-                'saved_date': profile.get('saved_date', ''),
-                'last_used': profile.get('last_used', ''),
-                'captions_generated_count': profile.get('captions_generated_count', 0)
-            })
-        
-        headers = [
-            'Company Name', 'Business Input', 'Website URL', 'Caption Style', 
-            'Caption Length', 'Target Audience', 'Saved Date', 'Last Used', 
-            'Captions Generated Count'
-        ]
-        
-        return export_data_to_csv(data, headers)
+        for key, value in mapping.items():
+            if value and value.strip():
+                st.session_state[key] = value
+
 
 class SessionManager:
-    """Manages session state for the application."""
+    """Manages session state and company data integration."""
     
-    @staticmethod
-    def clear_all_session_data() -> int:
-        """Clear all session state data for starting over.
-        
-        Returns:
-            Number of session keys cleared
-        """
-        # Combine all session key categories
-        all_keys = []
-        for key_category in SESSION_KEYS.values():
-            all_keys.extend(key_category)
-        
-        # Also add the current_settings key
-        all_keys.append('current_settings')
-        
-        # Clear all specified keys
-        cleared_count = clear_session_keys(all_keys)
-        
-        # Clear cached data
-        if hasattr(st, 'cache_data'):
-            st.cache_data.clear()
-        
-        return cleared_count
+    def __init__(self):
+        self.company_manager = CompanyManager()
     
-    @staticmethod
-    def clear_image_data() -> int:
-        """Clear only image-related session data.
+    def load_company_to_session(self, company_id: str) -> bool:
+        """Load company profile data into session state."""
+        profile = self.company_manager.get_profile(company_id)
+        if profile:
+            st.session_state['selected_company'] = company_id
+            st.session_state['business_name'] = profile.name
+            st.session_state['business_type'] = profile.business_type
+            st.session_state['target_audience'] = profile.target_audience
+            st.session_state['website_url'] = profile.website_url
+            return True
+        return False
+    
+    def save_session_to_company(self, company_id: str) -> bool:
+        """Save current session data to company profile."""
+        session_data = {
+            'name': st.session_state.get('business_name', ''),
+            'business_type': st.session_state.get('business_type', ''),
+            'target_audience': st.session_state.get('target_audience', ''),
+            'website_url': st.session_state.get('website_url', ''),
+            'description': st.session_state.get('description', '')
+        }
         
-        Returns:
-            Number of session keys cleared
-        """
-        return clear_session_keys(SESSION_KEYS["IMAGE_KEYS"])
+        return self.company_manager.update_profile(company_id, session_data)
     
-    @staticmethod
-    def clear_caption_data() -> int:
-        """Clear only caption-related session data.
+    def populate_from_website_analysis(self, analysis_results: Dict[str, Any]):
+        """Populate session state from website analysis results."""
+        self.company_manager.populate_from_website_analysis(analysis_results)
+
+
+def show_company_selector():
+    """Display company profile selector in sidebar."""
+    st.sidebar.markdown("### Company Profiles")
+    
+    session_manager = get_session_manager()
+    profiles = session_manager.company_manager.list_profiles()
+    
+    # Company selector
+    if profiles:
+        profile_options = {f"{p.name} ({p.business_type})": p.company_id for p in profiles}
+        profile_options["+ New Company"] = "new"
         
-        Returns:
-            Number of session keys cleared
-        """
-        return clear_session_keys(SESSION_KEYS["CAPTION_KEYS"])
-    
-    @staticmethod
-    def clear_ui_state() -> int:
-        """Clear only UI state session data.
+        selected_display = st.sidebar.selectbox(
+            "Select Company:",
+            list(profile_options.keys()),
+            key="company_selector"
+        )
         
-        Returns:
-            Number of session keys cleared
-        """
-        return clear_session_keys(SESSION_KEYS["UI_KEYS"])
+        selected_id = profile_options[selected_display]
+        
+        if selected_id == "new":
+            # Create new company
+            new_name = st.sidebar.text_input("Company Name:", key="new_company_name")
+            if st.sidebar.button("Create Company", key="create_company_btn"):
+                if new_name.strip():
+                    new_profile = session_manager.company_manager.create_profile(new_name.strip())
+                    session_manager.load_company_to_session(new_profile.company_id)
+                    st.sidebar.success(f"Created company: {new_name}")
+                    st.rerun()
+                else:
+                    st.sidebar.error("Please enter a company name")
+        else:
+            # Load existing company
+            if st.session_state.get('selected_company') != selected_id:
+                session_manager.load_company_to_session(selected_id)
+                st.rerun()
+            
+            # Save current session to company
+            if st.sidebar.button("Save Changes", key="save_company_btn"):
+                if session_manager.save_session_to_company(selected_id):
+                    st.sidebar.success("Company profile updated")
+                else:
+                    st.sidebar.error("Failed to save profile")
+    else:
+        # No profiles yet
+        st.sidebar.info("No company profiles yet")
+        new_name = st.sidebar.text_input("Create First Company:", key="first_company_name")
+        if st.sidebar.button("Create", key="create_first_company_btn"):
+            if new_name.strip():
+                new_profile = session_manager.company_manager.create_profile(new_name.strip())
+                session_manager.load_company_to_session(new_profile.company_id)
+                st.sidebar.success(f"Created: {new_name}")
+                st.rerun()
 
-# Convenience functions for backward compatibility and easy access
-def get_company_manager() -> CompanyProfileManager:
-    """Get a CompanyProfileManager instance.
-    
-    Returns:
-        CompanyProfileManager instance
-    """
-    return CompanyProfileManager()
 
-def get_session_manager() -> SessionManager:
-    """Get a SessionManager instance.
-    
-    Returns:
-        SessionManager instance
-    """
-    return SessionManager()
+def get_session_manager():
+    """Get singleton instance of SessionManager."""
+    if 'session_manager' not in st.session_state:
+        st.session_state.session_manager = SessionManager()
+    return st.session_state.session_manager
 
-# Legacy function wrappers for backward compatibility
-def load_company_profiles() -> Dict[str, Any]:
-    """Legacy wrapper for loading company profiles."""
-    return get_company_manager().load_company_profiles()
 
-def save_company_profiles(profiles: Dict[str, Any]) -> bool:
-    """Legacy wrapper for saving company profiles."""
-    return get_company_manager().save_company_profiles(profiles)
-
-def save_company_profile(company_name: str, profile_data: Dict[str, Any]) -> bool:
-    """Legacy wrapper for saving a company profile."""
-    return get_company_manager().save_company_profile(company_name, profile_data)
-
-def get_company_profile(company_name: str) -> Optional[Dict[str, Any]]:
-    """Legacy wrapper for getting a company profile."""
-    return get_company_manager().get_company_profile(company_name)
-
-def delete_company_profile(company_name: str) -> bool:
-    """Legacy wrapper for deleting a company profile."""
-    return get_company_manager().delete_company_profile(company_name)
-
-def create_profile_data_from_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
-    """Legacy wrapper for creating profile data from settings."""
-    return get_company_manager().create_profile_data_from_settings(settings)
-
-def clear_all_session_data() -> int:
-    """Legacy wrapper for clearing all session data."""
-    return get_session_manager().clear_all_session_data()
+def get_company_manager():
+    """Get singleton instance of CompanyManager."""
+    session_manager = get_session_manager()
+    return session_manager.company_manager

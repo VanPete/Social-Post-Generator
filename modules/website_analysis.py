@@ -1,567 +1,425 @@
 #!/usr/bin/env python3
 """
-Website analysis module for extracting business information from websites.
+Website analysis module for Social Post Generator
+Enhanced with GPT-powered business information extraction and 403 error mitigation
 """
 
-import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+import streamlit as st
 from urllib.parse import urljoin, urlparse
-from typing import Dict, List, Optional, Any, Tuple
-
-from config.constants import REQUEST_TIMEOUT, MAX_RETRIES, WEBSITE_ANALYSIS_TTL
-from utils.helpers import validate_url, clean_text, truncate_text
+from typing import Dict, Any, Optional
+import openai
+import random
+import time
 
 class WebsiteAnalyzer:
-    """Analyzes websites to extract business information and images."""
+    """Analyzes websites to extract business information using web scraping and GPT."""
     
-    def __init__(self):
-        self.timeout = REQUEST_TIMEOUT
-        self.max_retries = MAX_RETRIES
-        self.headers_list = [
-            {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-            },
-            {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
-            }
+    def __init__(self, openai_client=None):
+        # Rotate between multiple realistic user agents
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
         ]
+        self.openai_client = openai_client
     
-    @st.cache_data(ttl=WEBSITE_ANALYSIS_TTL, show_spinner=False)
-    def analyze_website(self, url: str) -> Optional[Dict[str, Any]]:
-        """Extract key information from a company's website including multiple pages.
-        
-        Args:
-            url: Website URL to analyze
-            
-        Returns:
-            Dictionary containing website analysis or None if failed
-        """
-        if not url:
-            return None
-        
-        try:
-            # Normalize URL
-            url = validate_url(url)
-            base_domain = urlparse(url).netloc
-            
-            # Fetch main page
-            main_response = self._fetch_page_with_retries(url)
-            if not main_response:
-                raise Exception("Failed to fetch main page after trying multiple approaches")
-            
-            main_soup = BeautifulSoup(main_response.content, 'html.parser')
-            
-            # Get priority pages to analyze
-            priority_pages = self._discover_priority_pages(url, base_domain, main_soup)
-            
-            # Initialize analysis structure
-            analysis = self._initialize_analysis(main_soup, url)
-            
-            # Fetch and analyze all pages
-            all_soups = [main_soup]
-            for page_url in priority_pages:
-                try:
-                    page_response = self._fetch_page_with_retries(page_url)
-                    if page_response:
-                        page_soup = BeautifulSoup(page_response.content, 'html.parser')
-                        all_soups.append(page_soup)
-                        analysis['pages_analyzed'].append(page_url)
-                except Exception:
-                    continue
-            
-            # Extract and process content from all pages
-            analysis.update(self._extract_content_from_pages(all_soups))
-            
-            # Extract images from main page
-            analysis['images'] = self.extract_website_images(url, main_soup)
-            
-            return analysis
-            
-        except Exception as e:
-            self._handle_website_analysis_error(e, url)
-            return None
-    
-    def _fetch_page_with_retries(self, page_url: str) -> Optional[requests.Response]:
-        """Fetch a page with multiple user agent retries.
-        
-        Args:
-            page_url: URL to fetch
-            
-        Returns:
-            Response object or None if failed
-        """
-        for headers in self.headers_list:
-            try:
-                response = requests.get(
-                    page_url, 
-                    headers=headers, 
-                    timeout=self.timeout, 
-                    allow_redirects=True
-                )
-                response.raise_for_status()
-                return response
-            except requests.exceptions.HTTPError as e:
-                if response and response.status_code == 403:
-                    continue  # Try next headers
-                else:
-                    raise
-            except Exception:
-                continue
-        
-        return None
-    
-    def _discover_priority_pages(self, url: str, base_domain: str, main_soup: BeautifulSoup) -> List[str]:
-        """Discover and score priority pages for analysis.
-        
-        Args:
-            url: Base URL
-            base_domain: Domain name
-            main_soup: BeautifulSoup object of main page
-            
-        Returns:
-            List of priority page URLs
-        """
-        page_scores = {}
-        links = main_soup.find_all('a', href=True)
-        
-        # Define keywords for scoring
-        high_priority_keywords = [
-            'about', 'company', 'mission', 'vision', 'story', 'history', 'who-we-are', 
-            'our-team', 'leadership', 'founders', 'values', 'culture'
-        ]
-        medium_priority_keywords = [
-            'service', 'product', 'offering', 'solution', 'what-we-do', 'expertise', 
-            'specialties', 'capabilities', 'features', 'portfolio', 'work'
-        ]
-        low_priority_keywords = [
-            'team', 'staff', 'experience', 'case-studies', 'testimonials', 
-            'reviews', 'clients', 'projects', 'gallery', 'showcase'
-        ]
-        nav_patterns = [
-            'about us', 'our services', 'what we do', 'our company', 'our story',
-            'meet the team', 'our mission', 'company info', 'get to know us',
-            'our expertise', 'why choose us', 'our approach', 'company profile'
-        ]
-        
-        for link in links[:150]:  # Limit to first 150 links for performance
-            href = link.get('href', '').lower()
-            link_text = link.get_text(strip=True).lower()
-            
-            # Convert to absolute URL
-            if href.startswith('/'):
-                full_url = f"{url.rstrip('/')}{href}"
-            elif href.startswith('http') and base_domain in href:
-                full_url = href
-            else:
-                continue
-            
-            # Skip unwanted patterns
-            skip_patterns = [
-                '#', 'mailto:', 'tel:', 'javascript:', '.pdf', '.jpg', '.png', '.gif', 
-                '.doc', '.docx', '.zip', '.csv', 'login', 'register', 'cart', 'checkout',
-                'privacy', 'terms', 'cookie', 'sitemap.xml', '.xml', 'feed', 'rss'
-            ]
-            if any(skip in href for skip in skip_patterns):
-                continue
-            
-            # Calculate score
-            score = 0
-            
-            # URL keyword scoring
-            for keyword in high_priority_keywords:
-                if keyword in href:
-                    score += 15
-            for keyword in medium_priority_keywords:
-                if keyword in href:
-                    score += 10
-            for keyword in low_priority_keywords:
-                if keyword in href:
-                    score += 7
-            
-            # Link text scoring
-            for keyword in high_priority_keywords:
-                if keyword in link_text:
-                    score += 12
-            for keyword in medium_priority_keywords:
-                if keyword in link_text:
-                    score += 8
-            for keyword in low_priority_keywords:
-                if keyword in link_text:
-                    score += 5
-            
-            # Navigation pattern bonus
-            for pattern in nav_patterns:
-                if pattern in link_text:
-                    score += 20
-            
-            # Depth bonus (prefer shallow pages)
-            depth = href.count('/')
-            if depth <= 3:
-                score += 5
-            elif depth <= 5:
-                score += 2
-            
-            if score > 0 and full_url not in page_scores:
-                page_scores[full_url] = score
-        
-        # Return top 10 pages
-        sorted_pages = sorted(page_scores.items(), key=lambda x: x[1], reverse=True)
-        return [page[0] for page in sorted_pages[:10]]
-    
-    def _initialize_analysis(self, main_soup: BeautifulSoup, url: str) -> Dict[str, Any]:
-        """Initialize the analysis structure with main page data.
-        
-        Args:
-            main_soup: BeautifulSoup object of main page
-            url: URL being analyzed
-            
-        Returns:
-            Initial analysis dictionary
-        """
-        analysis = {
-            'title': main_soup.find('title').get_text() if main_soup.find('title') else '',
-            'description': '',
-            'keywords': '',
-            'about_text': '',
-            'services': [],
-            'tone': 'professional',
-            'pages_analyzed': [url]
+    def _get_headers(self):
+        """Get randomized headers to avoid bot detection."""
+        return {
+            'User-Agent': random.choice(self.user_agents),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Cache-Control': 'max-age=0'
         }
+    
+    def analyze_website(self, url: str) -> Dict[str, Any]:
+        """Analyze a website with multiple fallback strategies for 403 errors."""
+        try:
+            # Ensure URL has protocol
+            if not url.startswith(('http://', 'https://')):
+                url = 'https://' + url
+            
+            # Try multiple strategies to bypass 403 errors
+            content = None
+            final_url = url
+            
+            # Strategy 1: Standard request with rotating headers
+            try:
+                content, final_url = self._fetch_with_headers(url)
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 403:
+                    st.warning("Website blocked direct access. Trying alternative methods...")
+                    
+                    # Strategy 2: Try with session and delay
+                    try:
+                        content, final_url = self._fetch_with_session(url)
+                    except:
+                        # Strategy 3: Try different URL variations
+                        content, final_url = self._try_url_variations(url)
+                else:
+                    raise e
+            
+            if not content:
+                return {
+                    'success': False,
+                    'error': "Could not access website content after trying multiple methods"
+                }
+            
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            # Extract raw content
+            raw_content = self._extract_raw_content(soup)
+            
+            # Use GPT to enhance extraction if client available
+            if self.openai_client and raw_content:
+                business_info = self._extract_with_gpt(raw_content, final_url)
+            else:
+                # Fallback to basic extraction
+                business_info = self._extract_business_info_basic(soup, final_url)
+            
+            return {
+                'success': True,
+                'url': final_url,
+                'business_info': business_info
+            }
+            
+        except requests.RequestException as e:
+            return {
+                'success': False,
+                'error': f"Failed to fetch website: {str(e)}"
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Error analyzing website: {str(e)}"
+            }
+    
+    def _fetch_with_headers(self, url: str) -> tuple:
+        """Fetch website content with randomized headers."""
+        headers = self._get_headers()
+        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        response.raise_for_status()
+        return response.content, response.url
+    
+    def _fetch_with_session(self, url: str) -> tuple:
+        """Fetch website content using session with delay."""
+        session = requests.Session()
+        session.headers.update(self._get_headers())
+        
+        # Add small delay to appear more human-like
+        time.sleep(random.uniform(1, 3))
+        
+        response = session.get(url, timeout=15, allow_redirects=True)
+        response.raise_for_status()
+        return response.content, response.url
+    
+    def _try_url_variations(self, url: str) -> tuple:
+        """Try different URL variations to bypass restrictions."""
+        parsed = urlparse(url)
+        
+        # Try different URL variations
+        variations = [
+            f"{parsed.scheme}://www.{parsed.netloc}{parsed.path}",  # Add www
+            f"{parsed.scheme}://{parsed.netloc.replace('www.', '')}{parsed.path}",  # Remove www
+            f"https://{parsed.netloc}{parsed.path}",  # Force HTTPS
+            f"http://{parsed.netloc}{parsed.path}",   # Try HTTP
+        ]
+        
+        # Remove duplicates and original URL
+        variations = list(set(variations))
+        if url in variations:
+            variations.remove(url)
+        
+        for variation in variations:
+            try:
+                headers = self._get_headers()
+                time.sleep(random.uniform(0.5, 2))  # Random delay
+                
+                response = requests.get(variation, headers=headers, timeout=10, allow_redirects=True)
+                if response.status_code == 200:
+                    return response.content, response.url
+            except:
+                continue
+        
+        # If all variations fail, try to get basic info from domain
+        try:
+            domain_url = f"{parsed.scheme}://{parsed.netloc}"
+            headers = self._get_headers()
+            response = requests.get(domain_url, headers=headers, timeout=10, allow_redirects=True)
+            if response.status_code == 200:
+                return response.content, response.url
+        except:
+            pass
+        
+        raise requests.exceptions.RequestException("All URL variations failed")
+    
+    def _extract_raw_content(self, soup: BeautifulSoup) -> str:
+        """Extract relevant text content from website for GPT analysis."""
+        content_parts = []
+        
+        # Get title
+        title = soup.find('title')
+        if title:
+            content_parts.append(f"Title: {title.get_text().strip()}")
         
         # Get meta description
-        meta_desc = main_soup.find('meta', attrs={'name': 'description'})
-        if meta_desc:
-            analysis['description'] = meta_desc.get('content', '')
+        meta_desc = soup.find('meta', attrs={'name': 'description'})
+        if meta_desc and meta_desc.get('content'):
+            content_parts.append(f"Description: {meta_desc['content'].strip()}")
         
-        # Get meta keywords
-        meta_keywords = main_soup.find('meta', attrs={'name': 'keywords'})
-        if meta_keywords:
-            analysis['keywords'] = meta_keywords.get('content', '')
+        # Get main headings
+        headings = soup.find_all(['h1', 'h2', 'h3'], limit=5)
+        for h in headings:
+            content_parts.append(f"Heading: {h.get_text().strip()}")
         
-        return analysis
+        # Get first few paragraphs
+        paragraphs = soup.find_all('p', limit=8)
+        for p in paragraphs:
+            text = p.get_text().strip()
+            if len(text) > 30:  # Only meaningful paragraphs
+                content_parts.append(f"Content: {text[:200]}")
+        
+        # Get about section if exists
+        about_section = soup.find(['section', 'div'], class_=lambda x: x and any(
+            keyword in x.lower() for keyword in ['about', 'company', 'business', 'who-we-are']
+        ))
+        if about_section:
+            about_text = about_section.get_text()[:500]
+            content_parts.append(f"About Section: {about_text}")
+        
+        return '\n'.join(content_parts)
     
-    def _extract_content_from_pages(self, all_soups: List[BeautifulSoup]) -> Dict[str, Any]:
-        """Extract and process content from all analyzed pages.
-        
-        Args:
-            all_soups: List of BeautifulSoup objects
-            
-        Returns:
-            Dictionary with extracted content
-        """
-        all_about_text = []
-        all_services = []
-        
-        for soup in all_soups:
-            # Extract about text
-            about_sections = soup.find_all(
-                ['div', 'section', 'p', 'h1', 'h2', 'h3', 'article'], 
-                class_=lambda x: x and any(
-                    word in x.lower() for word in [
-                        'about', 'mission', 'vision', 'story', 'who-we-are', 
-                        'company', 'intro', 'overview'
-                    ]
-                )
-            )
-            
-            # Also check by ID
-            about_sections.extend(
-                soup.find_all(
-                    ['div', 'section'], 
-                    id=lambda x: x and any(
-                        word in x.lower() for word in ['about', 'mission', 'vision', 'story', 'company']
-                    )
-                )
-            )
-            
-            # Main content areas
-            main_content = soup.find_all(['main', 'article', '.content', '.main-content'])
-            if main_content:
-                about_sections.extend(main_content)
-            
-            # Process about text
-            page_about_text = []
-            for section in about_sections[:8]:
-                text = section.get_text(strip=True)
-                if len(text) > 50 and not any(
-                    skip in text.lower() for skip in ['cookie', 'privacy', 'terms', 'menu', 'navigation']
-                ):
-                    page_about_text.append(text)
-            
-            combined_text = ' '.join(page_about_text)
-            if combined_text and len(combined_text) > 30:
-                all_about_text.append(combined_text)
-            
-            # Extract services
-            service_sections = soup.find_all(
-                ['div', 'section', 'li', 'h2', 'h3', 'h4', 'article'], 
-                class_=lambda x: x and any(
-                    word in x.lower() for word in [
-                        'service', 'product', 'offering', 'solution', 'feature', 'specialty', 'expertise'
-                    ]
-                )
-            )
-            
-            service_lists = soup.find_all(['ul', 'ol'], class_=lambda x: x and 'service' in x.lower())
-            service_sections.extend(service_lists)
-            
-            page_services = []
-            for section in service_sections[:12]:
-                text = section.get_text(strip=True)
-                if 15 < len(text) < 200:
-                    page_services.append(text)
-            
-            all_services.extend(page_services)
-        
-        # Process and deduplicate content
-        return {
-            'about_text': self._process_about_text(all_about_text),
-            'services': self._process_services(all_services)
-        }
-    
-    def _process_about_text(self, all_about_text: List[str]) -> str:
-        """Process and deduplicate about text.
-        
-        Args:
-            all_about_text: List of about text strings
-            
-        Returns:
-            Processed and deduplicated about text
-        """
-        unique_about_texts = []
-        seen_phrases = []
-        
-        for text in all_about_text:
-            words = text.lower().split()
-            if len(words) > 10:
-                overlap = False
-                for seen_words in seen_phrases:
-                    words_set = set(words)
-                    seen_set = set(seen_words)
-                    if len(words_set.intersection(seen_set)) / len(words_set) > 0.7:
-                        overlap = True
-                        break
-                
-                if not overlap:
-                    unique_about_texts.append(text)
-                    seen_phrases.append(words)
-        
-        return truncate_text(' '.join(unique_about_texts), 1200)
-    
-    def _process_services(self, all_services: List[str]) -> List[str]:
-        """Process and deduplicate services.
-        
-        Args:
-            all_services: List of service strings
-            
-        Returns:
-            Processed and deduplicated services list
-        """
-        clean_services = []
-        for service in all_services:
-            if not any(
-                skip in service.lower() for skip in [
-                    'read more', 'learn more', 'contact', 'click here', 'view all'
-                ]
-            ):
-                clean_services.append(service)
-        
-        # Remove duplicates while preserving order
-        seen_services = []
-        unique_services = []
-        for service in clean_services:
-            service_lower = service.lower()
-            if service_lower not in seen_services:
-                seen_services.append(service_lower)
-                unique_services.append(service)
-        
-        return unique_services[:15]
-    
-    def _handle_website_analysis_error(self, error: Exception, url: str):
-        """Handle and display appropriate error messages for website analysis failures.
-        
-        Args:
-            error: The exception that occurred
-            url: URL that failed to analyze
-        """
-        error_msg = str(error)
-        if "403" in error_msg and "Forbidden" in error_msg:
-            st.warning(f"⚠️ Website access blocked: {url}")
-            st.info("💡 The website is blocking automated access. You can still use the tool by:")
-            st.info("• Entering just the business type/name")
-            st.info("• Using uploaded images or clipboard images")
-            st.info("• The captions will still be generated, just without website-specific context")
-        elif "404" in error_msg:
-            st.warning(f"⚠️ Website not found: {url}")
-            st.info("💡 Please check the URL and try again, or continue without website analysis")
-        elif "timeout" in error_msg.lower():
-            st.warning(f"⚠️ Website took too long to respond: {url}")
-            st.info("💡 The website may be slow or temporarily unavailable")
-        else:
-            st.warning(f"⚠️ Could not analyze website: {error_msg}")
-            st.info("💡 Continuing without website analysis - captions will still be generated")
-    
-    @st.cache_data(ttl=WEBSITE_ANALYSIS_TTL)
-    def extract_website_images(self, base_url: str, soup: BeautifulSoup) -> List[Dict[str, str]]:
-        """Extract relevant images from website for potential social media use.
-        
-        Args:
-            base_url: Base URL of the website
-            soup: BeautifulSoup object of the page
-            
-        Returns:
-            List of image dictionaries with metadata
-        """
-        if not base_url or not soup:
-            return []
-            
+    def _extract_with_gpt(self, content: str, url: str) -> Dict[str, str]:
+        """Use GPT to extract structured business information from website content."""
         try:
-            images = []
-            img_tags = soup.find_all('img')
+            prompt = f"""Analyze this website content and extract the following business information in JSON format:
+
+Website URL: {url}
+Website Content:
+{content[:2000]}
+
+Please extract:
+1. company_name: The business/company name
+2. business_type: What type of business this is (e.g., "Restaurant", "Tech Startup", "Marketing Agency")
+3. target_audience: Who their target customers are (e.g., "Small business owners", "Young professionals", "Families")
+4. product_service: Their main product or service offering
+5. description: A brief description of what they do
+
+Return ONLY a JSON object with these 5 fields. If information is not clear, provide your best inference based on the content.
+
+Example format:
+{{
+    "company_name": "ABC Marketing",
+    "business_type": "Digital Marketing Agency", 
+    "target_audience": "Small to medium businesses",
+    "product_service": "Social media management and digital advertising",
+    "description": "Full-service digital marketing agency helping SMBs grow online"
+}}"""
+
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a business analyst expert at extracting company information from website content. Always return valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500,
+                temperature=0.3
+            )
             
-            # Process up to 10 images to avoid excessive processing
-            for img in img_tags[:10]:
-                processed_image = self._process_image_tag(img, base_url)
-                if processed_image:
-                    images.append(processed_image)
+            # Parse JSON response
+            import json
+            gpt_response = response.choices[0].message.content.strip()
             
-            return images[:5]  # Return top 5 suitable images
+            # Clean response if it has markdown formatting
+            if gpt_response.startswith('```json'):
+                gpt_response = gpt_response.replace('```json', '').replace('```', '').strip()
+            
+            business_info = json.loads(gpt_response)
+            
+            # Validate required fields exist
+            required_fields = ['company_name', 'business_type', 'target_audience', 'product_service', 'description']
+            for field in required_fields:
+                if field not in business_info:
+                    business_info[field] = ""
+            
+            return business_info
             
         except Exception as e:
-            st.warning(f"⚠️ Error extracting website images: {str(e)}")
-            return []
+            print(f"GPT extraction failed: {e}")
+            # Fallback to basic extraction
+            return self._extract_business_info_basic_from_content(content)
     
-    def _process_image_tag(self, img, base_url: str) -> Optional[Dict[str, str]]:
-        """Process a single image tag and return image info if suitable.
+    def _extract_business_info_basic(self, soup: BeautifulSoup, url: str) -> Dict[str, str]:
+        """Basic extraction without GPT (fallback method)."""
+        info = {}
         
-        Args:
-            img: BeautifulSoup img tag
-            base_url: Base URL for resolving relative URLs
-            
-        Returns:
-            Dictionary with image metadata or None if unsuitable
-        """
-        # Get image source
-        src = img.get('src') or img.get('data-src')
-        if not src:
-            return None
+        # Extract company name
+        info['company_name'] = self._extract_company_name(soup)
         
-        # Convert to absolute URL
-        src = self._normalize_image_url(src, base_url)
-        if not src:
-            return None
+        # Extract business type/description
+        info['business_type'] = self._extract_business_type(soup)
         
-        # Filter out unwanted images
-        if self._should_skip_image(src):
-            return None
+        # Extract description
+        info['description'] = self._extract_description(soup)
         
-        # Check image dimensions
-        if not self._has_suitable_dimensions(img):
-            return None
+        # Extract target audience (basic inference)
+        info['target_audience'] = self._infer_target_audience(soup)
         
-        # Extract image metadata
-        alt_text = img.get('alt', '')
-        title = img.get('title', '')
-        description = alt_text or title or 'Website image'
+        # Extract product/service
+        info['product_service'] = self._extract_product_service(soup)
         
-        return {
-            'url': src,
-            'alt': alt_text,
-            'title': title,
-            'description': description
+        return info
+    
+    def _extract_business_info_basic_from_content(self, content: str) -> Dict[str, str]:
+        """Extract basic info from raw content (GPT fallback)."""
+        lines = content.split('\n')
+        info = {
+            'company_name': '',
+            'business_type': '',
+            'target_audience': 'general audience',
+            'product_service': '',
+            'description': ''
         }
-    
-    def _normalize_image_url(self, src: str, base_url: str) -> str:
-        """Normalize image URL to absolute format.
         
-        Args:
-            src: Image source URL
-            base_url: Base URL for resolving relative URLs
+        # Try to extract company name from title
+        for line in lines:
+            if line.startswith('Title:'):
+                title = line.replace('Title:', '').strip()
+                # Clean common suffixes
+                for suffix in [' - Home', ' | Home', ' - Official Website']:
+                    if title.endswith(suffix):
+                        title = title[:-len(suffix)]
+                info['company_name'] = title
+                break
+        
+        # Extract description from meta description
+        for line in lines:
+            if line.startswith('Description:'):
+                info['description'] = line.replace('Description:', '').strip()
+                break
+        
+        return info
+    
+    def _extract_company_name(self, soup: BeautifulSoup) -> str:
+        """Extract company name from website."""
+        # Try title tag first
+        title = soup.find('title')
+        if title:
+            title_text = title.get_text().strip()
+            # Remove common suffixes
+            for suffix in [' - Home', ' | Home', ' - Official Website', ' | Official Site']:
+                if title_text.endswith(suffix):
+                    title_text = title_text[:-len(suffix)]
+            if title_text:
+                return title_text
+        
+        # Try h1 tag
+        h1 = soup.find('h1')
+        if h1:
+            return h1.get_text().strip()
+        
+        # Try meta property og:site_name
+        og_site = soup.find('meta', property='og:site_name')
+        if og_site and og_site.get('content'):
+            return og_site['content'].strip()
+        
+        return ""
+    
+    def _extract_business_type(self, soup: BeautifulSoup) -> str:
+        """Extract business type from website."""
+        # Look for about section
+        about_section = soup.find(['section', 'div'], class_=lambda x: x and any(
+            keyword in x.lower() for keyword in ['about', 'company', 'business']
+        ))
+        
+        if about_section:
+            text = about_section.get_text()[:200]
+            # Simple business type inference
+            business_types = {
+                'Restaurant': ['restaurant', 'dining', 'food', 'cuisine', 'menu'],
+                'Tech Company': ['software', 'technology', 'app', 'digital', 'tech'],
+                'Retail Store': ['shop', 'store', 'retail', 'products', 'merchandise'],
+                'Service Provider': ['service', 'consulting', 'solution', 'professional'],
+                'Healthcare': ['health', 'medical', 'doctor', 'clinic', 'hospital'],
+                'Education': ['education', 'school', 'training', 'course', 'learn']
+            }
             
-        Returns:
-            Normalized absolute URL
-        """
-        if src.startswith('//'):
-            return 'https:' + src
-        elif src.startswith('/'):
-            return urljoin(base_url, src)
-        elif not src.startswith(('http://', 'https://')):
-            return urljoin(base_url, src)
-        return src
+            text_lower = text.lower()
+            for biz_type, keywords in business_types.items():
+                if any(keyword in text_lower for keyword in keywords):
+                    return biz_type
+        
+        return ""
     
-    def _should_skip_image(self, src: str) -> bool:
-        """Check if image should be skipped based on URL patterns.
+    def _extract_description(self, soup: BeautifulSoup) -> str:
+        """Extract business description from website."""
+        # Try meta description first
+        meta_desc = soup.find('meta', attrs={'name': 'description'})
+        if meta_desc and meta_desc.get('content'):
+            return meta_desc['content'].strip()
         
-        Args:
-            src: Image source URL
-            
-        Returns:
-            True if image should be skipped
-        """
-        skip_patterns = ['logo', 'icon', 'favicon', 'avatar', 'thumb', 'badge', 'button']
-        return any(skip in src.lower() for skip in skip_patterns)
+        # Try og:description
+        og_desc = soup.find('meta', property='og:description')
+        if og_desc and og_desc.get('content'):
+            return og_desc['content'].strip()
+        
+        # Try first paragraph
+        first_p = soup.find('p')
+        if first_p:
+            return first_p.get_text().strip()[:200]
+        
+        return ""
     
-    def _has_suitable_dimensions(self, img) -> bool:
-        """Check if image has suitable dimensions for social media.
+    def _infer_target_audience(self, soup: BeautifulSoup) -> str:
+        """Infer target audience from website content."""
+        text_content = soup.get_text().lower()
         
-        Args:
-            img: BeautifulSoup img tag
-            
-        Returns:
-            True if dimensions are suitable
-        """
-        width = img.get('width')
-        height = img.get('height')
+        # Simple audience inference based on keywords
+        audiences = {
+            'Small business owners': ['small business', 'entrepreneur', 'startup'],
+            'Professionals': ['professional', 'corporate', 'business executive'],
+            'Families': ['family', 'parents', 'children', 'kids'],
+            'Young adults': ['millennial', 'young adult', 'college', 'student'],
+            'Seniors': ['senior', 'retirement', 'elderly', 'mature']
+        }
         
-        if width and height:
-            try:
-                w, h = int(width), int(height)
-                # Skip very small images (likely icons/thumbnails)
-                return w >= 200 and h >= 200
-            except ValueError:
-                pass  # Invalid dimensions, continue processing
+        for audience, keywords in audiences.items():
+            if any(keyword in text_content for keyword in keywords):
+                return audience
         
-        return True  # Allow images without specified dimensions
+        return "General audience"
     
-    def analyze_website_with_spinner(self, url: str) -> Optional[Dict[str, Any]]:
-        """Wrapper function to show spinner while analyzing website.
+    def _extract_product_service(self, soup: BeautifulSoup) -> str:
+        """Extract main product or service offering."""
+        # Look for services/products sections
+        service_section = soup.find(['section', 'div'], class_=lambda x: x and any(
+            keyword in x.lower() for keyword in ['service', 'product', 'offering', 'solution']
+        ))
         
-        Args:
-            url: Website URL to analyze
-            
-        Returns:
-            Website analysis dictionary or None
-        """
-        with st.spinner(f"🌐 Analyzing website: {url}"):
-            return self.analyze_website(url)
+        if service_section:
+            text = service_section.get_text().strip()[:150]
+            return text
+        
+        # Try to find from headings
+        headings = soup.find_all(['h2', 'h3'], limit=3)
+        for h in headings:
+            text = h.get_text().strip()
+            if any(word in text.lower() for word in ['service', 'product', 'solution', 'offering']):
+                return text
+        
+        return ""
 
-# Convenience functions for backward compatibility and easy access
-def get_website_analyzer() -> WebsiteAnalyzer:
-    """Get a WebsiteAnalyzer instance.
-    
-    Returns:
-        WebsiteAnalyzer instance
-    """
-    return WebsiteAnalyzer()
 
-# Legacy function wrappers for backward compatibility
-def analyze_website(url: str) -> Optional[Dict[str, Any]]:
-    """Legacy wrapper for website analysis."""
-    return get_website_analyzer().analyze_website(url)
-
-def extract_website_images(base_url: str, soup: BeautifulSoup) -> List[Dict[str, str]]:
-    """Legacy wrapper for image extraction."""
-    return get_website_analyzer().extract_website_images(base_url, soup)
-
-def analyze_website_with_spinner(url: str) -> Optional[Dict[str, Any]]:
-    """Legacy wrapper for website analysis with spinner."""
-    return get_website_analyzer().analyze_website_with_spinner(url)
+def get_website_analyzer(openai_client=None):
+    """Get singleton instance of WebsiteAnalyzer."""
+    if 'website_analyzer' not in st.session_state:
+        st.session_state.website_analyzer = WebsiteAnalyzer(openai_client)
+    return st.session_state.website_analyzer
