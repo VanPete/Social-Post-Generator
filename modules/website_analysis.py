@@ -37,22 +37,74 @@ class WebsiteAnalyzer:
             'STREAMLIT_CLOUD', 
             'HEROKUAPP',
             'DYNO',
-            'GITHUB_ACTIONS'
+            'GITHUB_ACTIONS',
+            'RAILWAY_ENVIRONMENT',
+            'RENDER'
         ]
-        return any(os.getenv(indicator) for indicator in cloud_indicators)
+        
+        # Check environment variables
+        env_cloud = any(os.getenv(indicator) for indicator in cloud_indicators)
+        
+        # Check if running on common cloud domains
+        try:
+            import socket
+            hostname = socket.gethostname()
+            hostname_cloud = any(domain in hostname.lower() for domain in [
+                'streamlit', 'heroku', 'railway', 'render', 'vercel'
+            ])
+        except:
+            hostname_cloud = False
+        
+        # Check for limited resources (common in cloud)
+        try:
+            import psutil
+            memory_gb = psutil.virtual_memory().total / (1024**3)
+            limited_resources = memory_gb < 2  # Less than 2GB suggests cloud
+        except ImportError:
+            # psutil not available, skip memory check
+            limited_resources = False
+            memory_gb = None
+        except:
+            limited_resources = False
+            memory_gb = None
+        
+        is_cloud = env_cloud or hostname_cloud or limited_resources
+        
+        # Debug info
+        if hasattr(st, 'sidebar'):
+            if st.sidebar.checkbox("Show Environment Debug", value=False):
+                st.sidebar.json({
+                    "is_cloud": is_cloud,
+                    "env_indicators": [k for k in cloud_indicators if os.getenv(k)],
+                    "hostname": hostname if 'hostname' in locals() else 'Unknown',
+                    "memory_gb": f"{memory_gb:.1f}" if 'memory_gb' in locals() else 'Unknown'
+                })
+        
+        return is_cloud
     
     def _get_headers(self):
         """Get randomized headers to avoid bot detection."""
-        return {
-            'User-Agent': random.choice(self.user_agents),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'max-age=0'
-        }
+        if self.is_cloud:
+            # Use simpler, more generic headers in cloud to avoid detection
+            return {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+            }
+        else:
+            # Full headers for localhost
+            return {
+                'User-Agent': random.choice(self.user_agents),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Cache-Control': 'max-age=0'
+            }
     
     def analyze_website(self, url: str) -> Dict[str, Any]:
         """Analyze a website with multiple fallback strategies for 403 errors."""
@@ -60,6 +112,24 @@ class WebsiteAnalyzer:
             # Ensure URL has protocol
             if not url.startswith(('http://', 'https://')):
                 url = 'https://' + url
+            
+            # Cloud-specific optimization: try quick basic extraction first
+            if self.is_cloud:
+                try:
+                    # Quick attempt with minimal processing for cloud
+                    content, final_url = self._fetch_with_headers_minimal(url)
+                    if content:
+                        soup = BeautifulSoup(content, 'html.parser')
+                        # Use basic extraction in cloud to avoid timeouts
+                        business_info = self._extract_business_info_basic(soup, final_url)
+                        return {
+                            'success': True,
+                            'url': final_url,
+                            'business_info': business_info
+                        }
+                except Exception as cloud_error:
+                    # Continue with regular flow if quick method fails
+                    pass
             
             # Try multiple strategies to bypass 403 errors
             content = None
@@ -70,8 +140,6 @@ class WebsiteAnalyzer:
                 content, final_url = self._fetch_with_headers(url)
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 403:
-                    st.warning("Website blocked direct access. Trying alternative methods...")
-                    
                     # Strategy 2: Try with session and delay
                     try:
                         content, final_url = self._fetch_with_session(url)
@@ -92,11 +160,11 @@ class WebsiteAnalyzer:
             # Extract raw content
             raw_content = self._extract_raw_content(soup)
             
-            # Use GPT to enhance extraction if client available
-            if self.openai_client and raw_content:
+            # Use GPT to enhance extraction if client available and not in cloud (to avoid timeouts)
+            if self.openai_client and raw_content and not self.is_cloud:
                 business_info = self._extract_with_gpt(raw_content, final_url)
             else:
-                # Fallback to basic extraction
+                # Fallback to basic extraction (always use in cloud)
                 business_info = self._extract_business_info_basic(soup, final_url)
             
             return {
@@ -106,14 +174,20 @@ class WebsiteAnalyzer:
             }
             
         except requests.RequestException as e:
+            error_msg = f"Failed to fetch website: {str(e)}"
+            if self.is_cloud:
+                error_msg += " (Cloud environment may have network restrictions)"
             return {
                 'success': False,
-                'error': f"Failed to fetch website: {str(e)}"
+                'error': error_msg
             }
         except Exception as e:
+            error_msg = f"Error analyzing website: {str(e)}"
+            if self.is_cloud:
+                error_msg += " (Cloud processing timeout or resource limit)"
             return {
                 'success': False,
-                'error': f"Error analyzing website: {str(e)}"
+                'error': error_msg
             }
     
     def _fetch_with_headers(self, url: str) -> tuple:
@@ -122,6 +196,15 @@ class WebsiteAnalyzer:
         # Adjust timeout based on environment
         timeout = 5 if self.is_cloud else 8
         response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+        response.raise_for_status()
+        return response.content, response.url
+    
+    def _fetch_with_headers_minimal(self, url: str) -> tuple:
+        """Minimal fetch for cloud environments with very short timeout."""
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=3, allow_redirects=True)
         response.raise_for_status()
         return response.content, response.url
     
