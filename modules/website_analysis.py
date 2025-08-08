@@ -447,6 +447,10 @@ Example format:
 
 def get_website_analyzer(openai_client=None):
     """Get singleton instance of WebsiteAnalyzer."""
-    if 'website_analyzer' not in st.session_state:
-        st.session_state.website_analyzer = WebsiteAnalyzer(openai_client)
-    return st.session_state.website_analyzer
+    # Create a unique key based on whether OpenAI client is available
+    key = f'website_analyzer_{"gpt" if openai_client else "basic"}'
+    
+    if key not in st.session_state or (openai_client and not hasattr(st.session_state[key], 'openai_client')):
+        st.session_state[key] = WebsiteAnalyzer(openai_client)
+    
+    return st.session_state[key]

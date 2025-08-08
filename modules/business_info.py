@@ -28,22 +28,43 @@ def business_info_section(ui):
             if st.button("Auto-Fill from Website", use_container_width=True, type="secondary"):
                 with st.spinner("Analyzing website with AI..."):
                     # Get OpenAI client for enhanced analysis
+                    openai_client = None
                     try:
-                        # Import the OpenAI client initialization function
-                        import sys
-                        import os
-                        sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-                        from main import initialize_openai_client
+                        # Try multiple ways to import the OpenAI client
+                        try:
+                            from main import initialize_openai_client
+                            openai_client = initialize_openai_client()
+                        except ImportError:
+                            # Alternative import method for cloud environments
+                            import importlib.util
+                            import os
+                            main_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'main.py')
+                            spec = importlib.util.spec_from_file_location("main", main_path)
+                            main_module = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(main_module)
+                            openai_client = main_module.initialize_openai_client()
                         
-                        openai_client = initialize_openai_client()
-                        analyzer = get_website_analyzer(openai_client)
-                        st.sidebar.info("Using GPT-enhanced analysis")
+                        if openai_client:
+                            analyzer = get_website_analyzer(openai_client)
+                            st.sidebar.success("✅ Using GPT-enhanced analysis")
+                        else:
+                            analyzer = get_website_analyzer()
+                            st.sidebar.warning("⚠️ Using basic analysis (GPT unavailable)")
+                            
                     except Exception as e:
                         # Fallback to basic analysis
                         analyzer = get_website_analyzer()
-                        st.sidebar.warning(f"Using basic analysis (GPT unavailable: {str(e)[:50]})")
+                        st.sidebar.warning(f"⚠️ Using basic analysis (Error: {str(e)[:30]}...)")
                     
                     results = analyzer.analyze_website(website_url)
+                    
+                    # Debug info for troubleshooting
+                    if st.sidebar.checkbox("Show Debug Info", value=False):
+                        st.sidebar.json({
+                            "analyzer_type": "GPT" if hasattr(analyzer, 'openai_client') and analyzer.openai_client else "Basic",
+                            "results_success": results.get('success', False) if results else False,
+                            "extracted_fields": len(results.get('business_info', {})) if results and results.get('success') else 0
+                        })
                     
                     if results and results.get('success'):
                         st.session_state.website_analysis_results = results
