@@ -29,12 +29,19 @@ def business_info_section(ui):
                 with st.spinner("Analyzing website with AI..."):
                     # Get OpenAI client for enhanced analysis
                     try:
+                        # Import the OpenAI client initialization function
+                        import sys
+                        import os
+                        sys.path.append(os.path.dirname(os.path.dirname(__file__)))
                         from main import initialize_openai_client
+                        
                         openai_client = initialize_openai_client()
                         analyzer = get_website_analyzer(openai_client)
-                    except:
+                        st.sidebar.info("Using GPT-enhanced analysis")
+                    except Exception as e:
                         # Fallback to basic analysis
                         analyzer = get_website_analyzer()
+                        st.sidebar.warning(f"Using basic analysis (GPT unavailable: {str(e)[:50]})")
                     
                     results = analyzer.analyze_website(website_url)
                     

@@ -314,12 +314,39 @@ Example format:
         title = soup.find('title')
         if title:
             title_text = title.get_text().strip()
-            # Remove common suffixes
-            for suffix in [' - Home', ' | Home', ' - Official Website', ' | Official Site']:
+            
+            # Remove common suffixes and prefixes
+            suffixes_to_remove = [
+                ' - Home', ' | Home', ' - Official Website', ' | Official Site',
+                ' - Homepage', ' | Homepage', ' Home Page', ' | Home Page',
+                ' | Official Website', ' - Official Site', ' | Main Page',
+                ' - Main Page', ' | Welcome', ' - Welcome'
+            ]
+            
+            for suffix in suffixes_to_remove:
                 if title_text.endswith(suffix):
                     title_text = title_text[:-len(suffix)]
+            
+            # Clean up common business descriptors at the end
+            descriptors_to_remove = [
+                ' in Columbus, OH', ' in Columbus, Ohio', ' - Columbus, OH',
+                ' | Columbus, OH', ' Columbus, OH', ' Columbus Ohio'
+            ]
+            
+            for descriptor in descriptors_to_remove:
+                if title_text.endswith(descriptor):
+                    title_text = title_text[:-len(descriptor)]
+            
+            # Extract just the company name if it contains descriptive text
+            # Look for patterns like "Company Name | Description" or "Company Name - Description"
+            if ' | ' in title_text and not any(word in title_text.lower() for word in ['home', 'welcome', 'official']):
+                # Take the first part before the pipe
+                parts = title_text.split(' | ')
+                if len(parts) > 1:
+                    title_text = parts[-1].strip()  # Take the last part (usually company name)
+            
             if title_text:
-                return title_text
+                return title_text.strip()
         
         # Try h1 tag
         h1 = soup.find('h1')
