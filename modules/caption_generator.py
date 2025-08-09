@@ -198,7 +198,7 @@ Target Audience: {target_audience}"""
             prompt += f"\n\nImage Context: {image_analysis}"
             prompt += "\nIMPORTANT: Reference the uploaded image in your captions. Make the captions match what's shown in the image."
         
-        if platform and platform not in ["All Social Platforms (Default)", "2-3 sentences", "3-4 sentences"]:
+        if platform and platform not in ["All Social Platforms", "2-3 sentences", "3-4 sentences", "4-5 sentences (Default)"]:
             prompt += f"\nPlatform: {platform}"
         
         if char_limit:
@@ -207,6 +207,8 @@ Target Audience: {target_audience}"""
             prompt += f"\nLength: 2-3 sentences for optimal engagement"
         elif platform == "3-4 sentences":
             prompt += f"\nLength: 3-4 sentences for detailed engagement"
+        elif platform == "4-5 sentences (Default)":
+            prompt += f"\nLength: 4-5 sentences for comprehensive engagement"
         else:
             prompt += f"\nLength: Character fitting for all social platforms"
         
