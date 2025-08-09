@@ -162,7 +162,9 @@ class WebsiteAnalyzer:
             
             # Extract business information based on available method
             if self.openai_client:
-                business_info = self._extract_business_info_gpt(soup, final_url)
+                # Convert soup back to text for GPT processing
+                raw_content = self._extract_text_content(soup)
+                business_info = self._extract_with_gpt(raw_content, final_url)
             else:
                 business_info = self._extract_business_info_basic(soup, final_url)
             
