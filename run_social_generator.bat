@@ -1,7 +1,7 @@
 @echo off
 cls
 echo ===============================================
-echo    Adcellerant Social Caption Generator
+echo    Social Post Generator
 echo ===============================================
 echo.
 

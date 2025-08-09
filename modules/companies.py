@@ -16,6 +16,7 @@ class CompanyProfile:
         self.name = ""
         self.business_type = ""
         self.target_audience = ""
+        self.product_name = ""  # Main Product/Service field
         self.website_url = ""
         self.description = ""
         self.created_at = None
@@ -28,6 +29,7 @@ class CompanyProfile:
             'name': self.name,
             'business_type': self.business_type,
             'target_audience': self.target_audience,
+            'product_name': self.product_name,  # Include product_name field
             'website_url': self.website_url,
             'description': self.description,
             'created_at': self.created_at,
@@ -40,6 +42,7 @@ class CompanyProfile:
         self.name = data.get('name', '')
         self.business_type = data.get('business_type', '')
         self.target_audience = data.get('target_audience', '')
+        self.product_name = data.get('product_name', '')  # Load product_name field
         self.website_url = data.get('website_url', '')
         self.description = data.get('description', '')
         self.created_at = data.get('created_at')
@@ -69,6 +72,7 @@ class CompanyManager:
                     profile.name = company_name
                     profile.business_type = data.get('business_type', '')
                     profile.target_audience = data.get('target_audience', '')
+                    profile.product_name = data.get('product_name', '')  # Load product_name field
                     profile.website_url = data.get('website_url', '')
                     profile.description = data.get('description', '')
                     
@@ -89,13 +93,15 @@ class CompanyManager:
     def save_profiles(self):
         """Save company profiles to JSON file."""
         try:
-            # Convert to old format for backward compatibility
+            # Convert to format for storage
             profiles_data = {}
             for profile in self.profiles.values():
                 profiles_data[profile.name] = {
-                    'business_input': profile.name,
+                    'business_input': profile.name,  # Keep for compatibility
+                    'name': profile.name,  # Add proper name field
                     'business_type': profile.business_type,
                     'target_audience': profile.target_audience,
+                    'product_name': profile.product_name,  # Include product_name field
                     'website_url': profile.website_url,
                     'description': profile.description,
                     'created_at': profile.created_at,
@@ -151,6 +157,16 @@ class CompanyManager:
         """Get all company profiles."""
         return list(self.profiles.values())
     
+    def clear_all_profiles(self) -> bool:
+        """Clear all saved company profiles."""
+        try:
+            self.profiles.clear()
+            self.save_profiles()
+            return True
+        except Exception as e:
+            print(f"Error clearing profiles: {e}")
+            return False
+    
     def get_recent_companies(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent companies in the format expected by main.py."""
         profiles = self.list_profiles()
@@ -174,44 +190,6 @@ class CompanyManager:
             recent_companies.append(company_data)
         
         return recent_companies
-    
-    def save_company_profile(self, company_name: str, profile_data: Dict[str, Any]) -> bool:
-        """Save a company profile with the given name and data."""
-        try:
-            # Check if company already exists by name
-            existing_profile = None
-            for profile in self.profiles.values():
-                if profile.name.lower() == company_name.lower():
-                    existing_profile = profile
-                    break
-            
-            if existing_profile:
-                # Update existing profile
-                existing_profile.business_type = profile_data.get('business_type', '')
-                existing_profile.target_audience = profile_data.get('target_audience', '')
-                existing_profile.website_url = profile_data.get('website_url', '')
-                existing_profile.description = profile_data.get('description', '')
-                existing_profile.updated_at = datetime.now().isoformat()
-            else:
-                # Create new profile
-                new_profile = CompanyProfile()
-                new_profile.name = company_name
-                new_profile.business_type = profile_data.get('business_type', '')
-                new_profile.target_audience = profile_data.get('target_audience', '')
-                new_profile.website_url = profile_data.get('website_url', '')
-                new_profile.description = profile_data.get('description', '')
-                new_profile.created_at = datetime.now().isoformat()
-                new_profile.updated_at = datetime.now().isoformat()
-                
-                self.profiles[new_profile.company_id] = new_profile
-            
-            # Save to persistent file storage
-            self.save_profiles()
-            return True
-            
-        except Exception as e:
-            print(f"Error saving company profile: {e}")
-            return False
     
     def populate_from_website_analysis(self, analysis_results: Dict[str, Any]):
         """Populate session state from website analysis."""
@@ -258,6 +236,7 @@ class SessionManager:
             st.session_state['business_name'] = profile.name
             st.session_state['business_type'] = profile.business_type
             st.session_state['target_audience'] = profile.target_audience
+            st.session_state['product_name'] = profile.product_name  # Load product_name field
             st.session_state['website_url'] = profile.website_url
             st.session_state['company_description'] = profile.description
             return True
@@ -265,10 +244,17 @@ class SessionManager:
     
     def save_session_to_company(self, company_id: str) -> bool:
         """Save current session data to company profile."""
+        # Capture current values from both session state and widget state
+        product_name_value = (
+            st.session_state.get('product_name', '') or 
+            st.session_state.get('product_name_input', '')
+        )
+        
         session_data = {
             'name': st.session_state.get('business_name', ''),
             'business_type': st.session_state.get('business_type', ''),
             'target_audience': st.session_state.get('target_audience', ''),
+            'product_name': product_name_value,  # Use fallback logic for product_name
             'website_url': st.session_state.get('website_url', ''),
             'description': st.session_state.get('company_description', '')
         }
@@ -278,6 +264,10 @@ class SessionManager:
     def populate_from_website_analysis(self, analysis_results: Dict[str, Any]):
         """Populate session state from website analysis results."""
         self.company_manager.populate_from_website_analysis(analysis_results)
+    
+    def clear_all_profiles(self) -> bool:
+        """Clear all saved company profiles."""
+        return self.company_manager.clear_all_profiles()
 
 
 def show_company_selector():

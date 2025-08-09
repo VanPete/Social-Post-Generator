@@ -87,7 +87,7 @@ class WebsiteAnalyzer:
         """Get randomized headers to avoid bot detection."""
         if self.is_cloud:
             # Use simpler, more generic headers in cloud to avoid detection
-            return {
+            headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9',
@@ -95,9 +95,10 @@ class WebsiteAnalyzer:
                 'Connection': 'keep-alive',
             }
         else:
-            # Full headers for localhost
-            return {
-                'User-Agent': random.choice(self.user_agents),
+            # Use the same proven User-Agent as diagnostic script for localhost
+            user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            headers = {
+                'User-Agent': user_agent,
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
                 'Accept-Encoding': 'gzip, deflate, br',
@@ -106,6 +107,10 @@ class WebsiteAnalyzer:
                 'Upgrade-Insecure-Requests': '1',
                 'Cache-Control': 'max-age=0'
             }
+        
+        # Log the User-Agent being used for debugging
+        self._log_debug(f"🔧 Using User-Agent: {headers['User-Agent'][:50]}...")
+        return headers
     
     def analyze_website(self, url: str) -> Dict[str, Any]:
         """Analyze a website with multiple fallback strategies for 403 errors."""
@@ -164,42 +169,41 @@ class WebsiteAnalyzer:
             content = None
             final_url = url
             
-            # Strategy 1: Standard request with rotating headers
+            # Use the same simple approach as the working test script
             try:
-                self._log_debug("📡 Attempting standard fetch with headers")
+                self._log_debug("📡 Attempting basic fetch (simplified approach)")
                 if hasattr(st, 'empty'):
                     with progress_placeholder:
                         st.info("📡 Fetching website content...")
-                content, final_url = self._fetch_with_headers(url)
-                self._log_debug(f"✅ Standard fetch successful ({len(content) if content else 0} chars)")
-            except requests.exceptions.HTTPError as e:
-                self._log_debug(f"❌ Standard fetch failed: HTTP {e.response.status_code}")
-                if e.response.status_code == 403:
-                    # Strategy 2: Try with session and delay
-                    try:
-                        self._log_debug("🔄 Attempting session-based fetch")
-                        content, final_url = self._fetch_with_session(url)
-                        self._log_debug(f"✅ Session fetch successful ({len(content) if content else 0} chars)")
-                    except Exception as session_error:
-                        self._log_debug(f"❌ Session fetch failed: {str(session_error)}")
-                        # Strategy 3: Try different URL variations
-                        self._log_debug("🔄 Attempting URL variations")
-                        content, final_url = self._try_url_variations(url)
-                        self._log_debug(f"✅ URL variation fetch result ({len(content) if content else 0} chars)")
-                else:
-                    raise e
-            except Exception as general_error:
-                self._log_debug(f"❌ General fetch error: {str(general_error)}")
-                raise general_error
+                
+                # Exact same approach as test_extraction.py
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+                response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+                response.raise_for_status()
+                content = response.text  # Use decoded text like test script
+                final_url = response.url
+                self._log_debug(f"✅ Basic fetch successful ({len(content)} chars)")
+                
+            except Exception as e:
+                self._log_debug(f"❌ Basic fetch failed: {str(e)}")
+                # Only if basic fails, try fallback
+                content = None
             
             if not content:
-                self._log_debug("❌ No content retrieved from any strategy")
+                self._log_debug("❌ No content retrieved")
                 return {
                     'success': False,
-                    'error': "Could not access website content after trying multiple methods"
+                    'error': "Could not access website content"
                 }
             
             self._log_debug(f"🔍 Parsing HTML content ({len(content)} chars)")
+            
+            # Log first 200 chars of HTML for debugging
+            content_preview = str(content)[:200].replace('\n', ' ').replace('\r', ' ')
+            self._log_debug(f"🔍 HTML preview: {content_preview}...")
+            
             soup = BeautifulSoup(content, 'html.parser')
             
             # Extract raw content
@@ -214,8 +218,17 @@ class WebsiteAnalyzer:
                         st.info("🤖 Enhancing analysis with AI...")
                 business_info = self._extract_with_gpt(raw_content, final_url)
             else:
-                # Fallback to basic extraction (always use in cloud)
-                self._log_debug(f"📊 Using basic extraction ({'cloud environment' if self.is_cloud else 'no AI client'})")
+                # Fallback to basic extraction
+                reason = []
+                if not self.openai_client:
+                    reason.append("no AI client")
+                if not raw_content:
+                    reason.append("no raw content")
+                if self.is_cloud:
+                    reason.append("cloud environment")
+                
+                reason_str = " + ".join(reason) if reason else "unknown reason"
+                self._log_debug(f"📊 Using basic extraction ({reason_str})")
                 if hasattr(st, 'empty'):
                     with progress_placeholder:
                         st.info("📊 Extracting business information...")
@@ -269,7 +282,8 @@ class WebsiteAnalyzer:
         timeout = 12 if self.is_cloud else 15
         response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
         response.raise_for_status()
-        return response.content, response.url
+        # Return decoded text instead of raw bytes
+        return response.text, response.url
     
     def _fetch_with_headers_minimal(self, url: str) -> tuple:
         """Minimal fetch for cloud environments with extended timeout for large sites."""
@@ -278,7 +292,8 @@ class WebsiteAnalyzer:
         }
         response = requests.get(url, headers=headers, timeout=8, allow_redirects=True)
         response.raise_for_status()
-        return response.content, response.url
+        # Return decoded text instead of raw bytes
+        return response.text, response.url
     
     def _fetch_with_session(self, url: str) -> tuple:
         """Fetch website content using session with delay."""
@@ -295,7 +310,8 @@ class WebsiteAnalyzer:
         timeout = 10 if self.is_cloud else 12
         response = session.get(url, timeout=timeout, allow_redirects=True)
         response.raise_for_status()
-        return response.content, response.url
+        # Return decoded text instead of raw bytes
+        return response.text, response.url
     
     def _try_url_variations(self, url: str) -> tuple:
         """Try different URL variations to bypass restrictions."""
@@ -321,7 +337,8 @@ class WebsiteAnalyzer:
                 
                 response = requests.get(variation, headers=headers, timeout=15, allow_redirects=True)
                 if response.status_code == 200:
-                    return response.content, response.url
+                    # Return decoded text instead of raw bytes
+                    return response.text, response.url
             except:
                 continue
         
@@ -331,7 +348,8 @@ class WebsiteAnalyzer:
             headers = self._get_headers()
             response = requests.get(domain_url, headers=headers, timeout=15, allow_redirects=True)
             if response.status_code == 200:
-                return response.content, response.url
+                # Return decoded text instead of raw bytes
+                return response.text, response.url
         except:
             pass
         
@@ -341,27 +359,43 @@ class WebsiteAnalyzer:
         """Extract relevant text content from website for GPT analysis."""
         content_parts = []
         
+        self._log_debug("🔍 Starting raw content extraction")
+        
         # Get title
         title = soup.find('title')
         if title:
-            content_parts.append(f"Title: {title.get_text().strip()}")
+            title_text = title.get_text().strip()
+            content_parts.append(f"Title: {title_text}")
+            self._log_debug(f"📝 Found title: {title_text[:50]}...")
         
         # Get meta description
         meta_desc = soup.find('meta', attrs={'name': 'description'})
         if meta_desc and meta_desc.get('content'):
-            content_parts.append(f"Description: {meta_desc['content'].strip()}")
+            desc_text = meta_desc['content'].strip()
+            content_parts.append(f"Description: {desc_text}")
+            self._log_debug(f"📝 Found meta description: {desc_text[:50]}...")
         
         # Get main headings
         headings = soup.find_all(['h1', 'h2', 'h3'], limit=5)
+        self._log_debug(f"📝 Found {len(headings)} headings")
         for h in headings:
-            content_parts.append(f"Heading: {h.get_text().strip()}")
+            heading_text = h.get_text().strip()
+            if heading_text:
+                content_parts.append(f"Heading: {heading_text}")
+                self._log_debug(f"📝 Heading: {heading_text[:30]}...")
         
         # Get first few paragraphs
         paragraphs = soup.find_all('p', limit=8)
+        meaningful_paragraphs = 0
+        self._log_debug(f"📝 Found {len(paragraphs)} paragraphs")
         for p in paragraphs:
             text = p.get_text().strip()
             if len(text) > 30:  # Only meaningful paragraphs
                 content_parts.append(f"Content: {text[:200]}")
+                meaningful_paragraphs += 1
+                self._log_debug(f"📝 Meaningful paragraph: {text[:30]}...")
+        
+        self._log_debug(f"📝 Kept {meaningful_paragraphs} meaningful paragraphs")
         
         # Get about section if exists
         about_section = soup.find(['section', 'div'], class_=lambda x: x and any(
@@ -370,8 +404,12 @@ class WebsiteAnalyzer:
         if about_section:
             about_text = about_section.get_text()[:500]
             content_parts.append(f"About Section: {about_text}")
+            self._log_debug(f"📝 Found about section: {about_text[:50]}...")
         
-        return '\n'.join(content_parts)
+        final_content = '\n'.join(content_parts)
+        self._log_debug(f"📝 Raw content extraction complete: {len(final_content)} total chars")
+        
+        return final_content
     
     def _extract_with_gpt(self, content: str, url: str) -> Dict[str, str]:
         """Use GPT to extract structured business information from website content."""

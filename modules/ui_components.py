@@ -102,13 +102,14 @@ class UIComponents:
             ) or ''
             
             product_name_default = st.session_state.get('product_name', '')
-            business_data['product_name'] = st.text_input(
+            product_name_value = st.text_input(
                 "Main Product/Service",
                 value=product_name_default,
                 placeholder="e.g., Social Media Management, Web Design",
                 help="Primary offering - extracted from website services section",
                 key="product_name_input"
             ) or ''
+            business_data['product_name'] = product_name_value
 
         # Company Description - full width below the two columns
         description_default = st.session_state.get('company_description', '')

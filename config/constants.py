@@ -29,7 +29,7 @@ CLIPBOARD_FEATURES_ENABLED = False
 
 # === Page Configuration ===
 PAGE_CONFIG = {
-    "page_title": "🚀 Adcellerant Social Caption Generator",
+    "page_title": "🚀 Social Post Generator",
     "page_icon": "📱",
     "layout": "wide",
     "initial_sidebar_state": "expanded"

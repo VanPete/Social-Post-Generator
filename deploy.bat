@@ -1,5 +1,5 @@
 @echo off
-echo 🚀 Adcellerant Social Caption Generator - Deployment Helper
+echo 🚀 Social Post Generator - Deployment Helper
 echo ==========================================================
 
 :menu
@@ -130,7 +130,7 @@ git add .
 git add -f Procfile setup.sh app.json
 
 set /p commit_msg="Enter commit message (or press Enter for default): "
-if "%commit_msg%"=="" set commit_msg=Deploy Adcellerant Social Caption Generator
+if "%commit_msg%"=="" set commit_msg=Deploy Social Post Generator
 
 git commit -m "%commit_msg%"
 exit /b

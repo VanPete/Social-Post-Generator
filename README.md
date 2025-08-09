@@ -1,4 +1,4 @@
-# 🚀 Social Caption Generator
+# 🚀 Social Post Generator
 
 > **AI-Powered Social Media Content Creation with Persistent Company Profiles**
 

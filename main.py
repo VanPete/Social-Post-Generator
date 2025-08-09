@@ -43,7 +43,7 @@ except ImportError:
 
 # Set Streamlit page configuration
 st.set_page_config(
-    page_title="Social Caption Generator",
+    page_title="Social Post Generator",
     page_icon="📱",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -190,37 +190,38 @@ def create_sidebar():
                 )
                 
                 if selected_company and st.button("Load Profile", use_container_width=True):
-                    profile_data = None
-                    for comp in recent_companies:
-                        if comp['name'] == selected_company:
-                            profile_data = comp['profile']
+                    # Use the new company profile system
+                    from modules.companies import get_session_manager
+                    session_manager = get_session_manager()
+                    
+                    # Find profile by name (since old system used names)
+                    profiles = session_manager.company_manager.list_profiles()
+                    target_profile = None
+                    for profile in profiles:
+                        if profile.name == selected_company:
+                            target_profile = profile
                             break
                     
-                    if profile_data:
-                        if 'business_input' in profile_data:
-                            st.session_state.business_name = profile_data.get('business_input', '')
-                        if 'business_type' in profile_data:
-                            st.session_state.business_type = profile_data.get('business_type', '')
-                        if 'target_audience' in profile_data:
-                            st.session_state.target_audience = profile_data.get('target_audience', '')
-                        if 'website_url' in profile_data:
-                            st.session_state.website_url = profile_data.get('website_url', '')
-                        
-                        st.success(f"Loaded profile for {selected_company}")
-                        st.rerun()
+                    if target_profile:
+                        if session_manager.load_company_to_session(target_profile.company_id):
+                            st.success(f"Loaded profile for {selected_company}")
+                            st.rerun()
+                        else:
+                            st.error("Failed to load profile")
+                    else:
+                        st.error("Profile not found")
             
             if st.session_state.get('business_name'):
                 if st.button("Save Current Profile", use_container_width=True):
-                    current_settings = {
-                        'business_input': st.session_state.get('business_name', ''),
-                        'business_type': st.session_state.get('business_type', ''),
-                        'target_audience': st.session_state.get('target_audience', ''),
-                        'website_url': st.session_state.get('website_url', ''),
-                        'product_name': st.session_state.get('product_name', ''),
-                        'website_analysis': st.session_state.get('website_analysis_results')
-                    }
+                    # Use the new company profile system instead of legacy format
+                    from modules.companies import get_session_manager
+                    session_manager = get_session_manager()
                     
-                    if company_manager.save_company_profile(st.session_state.business_name, current_settings):
+                    # Create a new profile with current session data
+                    new_profile = session_manager.company_manager.create_profile(st.session_state.get('business_name', ''))
+                    
+                    # Save current session data to the new profile
+                    if session_manager.save_session_to_company(new_profile.company_id):
                         st.success("Profile saved successfully!")
                     else:
                         st.error("Error saving profile")
@@ -254,10 +255,22 @@ def create_sidebar():
             
             st.warning("Reset All clears everything including saved profiles.")
             if st.button("Reset All", use_container_width=True):
+                # Clear session state
                 for key in list(st.session_state.keys()):
                     if key not in ['session_id', 'password_correct']:
                         del st.session_state[key]
-                st.success("All data reset!")
+                
+                # Clear all saved company profiles
+                try:
+                    from modules.companies import get_session_manager
+                    session_manager = get_session_manager()
+                    if session_manager.clear_all_profiles():
+                        st.success("All data and saved profiles cleared!")
+                    else:
+                        st.warning("Session data cleared, but there was an issue clearing saved profiles.")
+                except Exception as e:
+                    st.warning(f"Session data cleared, but error clearing profiles: {str(e)}")
+                
                 st.rerun()
         
         # Show logout option at bottom
@@ -267,7 +280,7 @@ def display_page_header():
     """Display the main page header."""
     if STREAMLIT_EXTRAS_AVAILABLE:
         colored_header(
-            label="Social Caption Generator",
+            label="Social Post Generator",
             description="AI-Powered Social Media Content Creation",
             color_name="violet-70"
         )
@@ -276,7 +289,7 @@ def display_page_header():
         st.markdown("""
         <div style='text-align: center; padding: 20px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); 
                     border-radius: 15px; margin-bottom: 30px; color: white; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);'>
-            <h1 style='margin: 0; font-size: 2.5em; font-weight: 700;'>Social Caption Generator</h1>
+            <h1 style='margin: 0; font-size: 2.5em; font-weight: 700;'>Social Post Generator</h1>
             <h3 style='margin: 10px 0 0 0; font-weight: 300; opacity: 0.9;'>AI-Powered Social Media Content Creation</h3>
         </div>
         """, unsafe_allow_html=True)
@@ -309,7 +322,7 @@ def handle_main_content():
     ]
     can_generate = all(field and str(field).strip() for field in required_fields)
     
-    st.markdown("## Social Caption Generator")
+    st.markdown("## Social Post Generator")
     st.caption("AI-Powered Social Media Content Creation")
     
     st.session_state['call_to_action'] = st.checkbox(
@@ -370,86 +383,6 @@ def handle_main_content():
             if st.button("Clear Website Debug Log"):
                 st.session_state.website_debug_log = []
                 st.rerun()
-    
-    # Website Analysis Debug Section
-    with st.expander("🔧 Website Analysis Debug (Localhost vs Cloud)", expanded=False):
-        st.markdown("### Environment Analysis")
-        
-        # Import psutil for environment detection
-        try:
-            import psutil
-            is_cloud = psutil.cpu_count() <= 1
-            st.info(f"**Environment**: {'🌐 Streamlit Cloud' if is_cloud else '💻 Localhost'}")
-            st.text(f"CPU Count: {psutil.cpu_count()}")
-            if hasattr(psutil, 'virtual_memory'):
-                memory = psutil.virtual_memory()
-                st.text(f"Memory: {memory.total // (1024**3)} GB total, {memory.available // (1024**3)} GB available")
-        except ImportError:
-            st.warning("psutil not available for environment detection")
-        
-        # Current session analysis data
-        if st.session_state.get('website_analysis_results'):
-            st.markdown("### Last Website Analysis Results")
-            results = st.session_state.website_analysis_results
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.json({
-                    "success": results.get('success', False),
-                    "error": results.get('error', 'None'),
-                    "website_url": st.session_state.get('website_url', 'Not set')
-                })
-            
-            with col2:
-                if results.get('success') and results.get('business_info'):
-                    business_info = results['business_info']
-                    st.json({
-                        "extracted_fields": len(business_info),
-                        "company_name": business_info.get('company_name', 'Not extracted'),
-                        "business_type": business_info.get('business_type', 'Not extracted'),
-                        "target_audience": business_info.get('target_audience', 'Not extracted'),
-                        "description": business_info.get('description', 'Not extracted')[:100] + "..." if business_info.get('description') else 'Not extracted'
-                    })
-        
-        # Manual test section
-        st.markdown("### Manual Test")
-        test_url = st.text_input("Test URL:", placeholder="https://example.com")
-        
-        if st.button("🧪 Test Website Analysis"):
-            if test_url:
-                with st.spinner("Testing website analysis..."):
-                    try:
-                        # Get analyzer instance
-                        from modules.website_analysis import get_website_analyzer
-                        try:
-                            analyzer = get_website_analyzer(initialize_openai_client())
-                            st.success("✅ Using GPT-enhanced analysis")
-                        except:
-                            analyzer = get_website_analyzer()
-                            st.warning("⚠️ Using basic analysis")
-                        
-                        # Test the analysis
-                        import time
-                        start_time = time.time()
-                        test_results = analyzer.analyze_website(test_url)
-                        end_time = time.time()
-                        
-                        st.markdown(f"**Analysis Time**: {end_time - start_time:.2f} seconds")
-                        
-                        if test_results and test_results.get('success'):
-                            st.success("✅ Analysis successful!")
-                            st.json(test_results.get('business_info', {}))
-                        else:
-                            st.error("❌ Analysis failed")
-                            if test_results:
-                                st.error(f"Error: {test_results.get('error', 'Unknown error')}")
-                            
-                    except Exception as e:
-                        st.error(f"Test failed with exception: {str(e)}")
-                        import traceback
-                        st.code(traceback.format_exc())
-            else:
-                st.warning("Please enter a URL to test")
 
 def main():
     """Main application entry point."""
