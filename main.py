@@ -78,6 +78,10 @@ def start_over():
     keys_to_preserve = [
         'session_id', 
         'password_correct',  # Keep authentication
+        'auth_timestamp',    # Keep authentication timestamp
+        'session_token',     # Keep session token
+        'last_activity',     # Keep last activity timestamp
+        'login_attempts',    # Keep login attempt counter
         'company_profiles',  # Keep saved company data
         'company_image_presets',  # Keep company image settings
         'file_uploader_key_counter',  # Keep the counter for image uploader reset
