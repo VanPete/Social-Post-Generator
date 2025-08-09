@@ -89,6 +89,12 @@ def show_image_upload_section():
         key=uploader_key
     )
     
+    # Check if we should ignore uploaded files (after Start Over)
+    if 'ignore_uploaded_files' in st.session_state and st.session_state.ignore_uploaded_files:
+        uploaded_files = None
+        # Reset the ignore flag after one render cycle
+        del st.session_state.ignore_uploaded_files
+    
     if uploaded_files:
         uploader = ImageUploader()
         valid_files, error_messages = uploader.process_uploaded_files(uploaded_files)
@@ -145,6 +151,9 @@ def clear_uploaded_images():
     if 'file_uploader_key_counter' not in st.session_state:
         st.session_state.file_uploader_key_counter = 0
     st.session_state.file_uploader_key_counter += 1
+    
+    # Set flag to ignore uploaded files on next render
+    st.session_state.ignore_uploaded_files = True
 
 # Legacy compatibility functions (simplified)
 def get_image_processor():

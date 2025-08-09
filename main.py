@@ -85,7 +85,9 @@ def start_over():
         'session_id', 
         'password_correct',  # Keep authentication
         'company_profiles',  # Keep saved company data
-        'company_image_presets'  # Keep company image settings
+        'company_image_presets',  # Keep company image settings
+        'file_uploader_key_counter',  # Keep the counter for image uploader reset
+        'ignore_uploaded_files'  # Keep the flag to ignore uploaded files
     ]
     
     # Clear uploaded images first (before clearing session state)
