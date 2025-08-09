@@ -13,9 +13,10 @@ class UIComponents:
     
     def __init__(self):
         self.platform_limits = {
-            "All Social Platforms (Default)": None,
+            "4-5 sentences (Default)": None,
             "2-3 sentences": None,
             "3-4 sentences": None,
+            "All Social Platforms": None,
             "Twitter/X": 280,
             "Instagram": 2200,
             "LinkedIn": 3000,
@@ -32,7 +33,7 @@ class UIComponents:
             platform_options,
             index=default_index,
             help="Choose a platform to automatically apply character limits",
-            key=f"platform_select_{uuid.uuid4()}"
+            key="platform_selector"
         )
         
         char_limit = self.platform_limits[selected_platform]

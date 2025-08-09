@@ -76,12 +76,17 @@ def show_image_upload_section():
     st.markdown("#### Upload Images (Optional)")
     st.markdown("*Upload images to help generate more targeted captions*")
     
+    # Get dynamic key for file uploader to enable proper clearing
+    if 'file_uploader_key_counter' not in st.session_state:
+        st.session_state.file_uploader_key_counter = 0
+    uploader_key = f"image_uploader_{st.session_state.file_uploader_key_counter}"
+    
     uploaded_files = st.file_uploader(
         "Choose images",
         type=["png", "jpg", "jpeg", "webp"],
         accept_multiple_files=True,
         help="Drag and drop or select images. These will be used as reference for caption generation.",
-        key="image_uploader"
+        key=uploader_key
     )
     
     if uploaded_files:
@@ -136,10 +141,10 @@ def clear_uploaded_images():
     if 'debug_logs' in st.session_state:
         del st.session_state.debug_logs
     
-    # Clear file uploader widget key to reset the uploader
-    uploader_key = 'image_uploader'
-    if uploader_key in st.session_state:
-        del st.session_state[uploader_key]
+    # Force file uploader to reset by incrementing its key counter
+    if 'file_uploader_key_counter' not in st.session_state:
+        st.session_state.file_uploader_key_counter = 0
+    st.session_state.file_uploader_key_counter += 1
 
 # Legacy compatibility functions (simplified)
 def get_image_processor():
