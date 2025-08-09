@@ -77,13 +77,35 @@ def business_info_section(ui):
                     
                     # Debug info for troubleshooting
                     if st.sidebar.checkbox("Show Debug Info", value=False):
-                        st.sidebar.json({
+                        import psutil
+                        try:
+                            is_cloud = psutil.cpu_count() <= 1
+                            environment = "Cloud" if is_cloud else "Localhost"
+                        except:
+                            environment = "Unknown"
+                        
+                        debug_info = {
+                            "environment": environment,
                             "analyzer_type": "GPT" if hasattr(analyzer, 'openai_client') and analyzer.openai_client else "Basic",
                             "cloud_environment": getattr(analyzer, 'is_cloud', 'Unknown'),
+                            "website_url": website_url,
                             "results_success": results.get('success', False) if results else False,
                             "extracted_fields": len(results.get('business_info', {})) if results and results.get('success') else 0,
                             "error_message": results.get('error', 'None') if results and not results.get('success') else 'None'
-                        })
+                        }
+                        
+                        # Add detailed field extraction info if successful
+                        if results and results.get('success') and results.get('business_info'):
+                            business_info = results['business_info']
+                            debug_info.update({
+                                "company_name_extracted": bool(business_info.get('company_name')),
+                                "business_type_extracted": bool(business_info.get('business_type')),
+                                "target_audience_extracted": bool(business_info.get('target_audience')),
+                                "description_extracted": bool(business_info.get('description')),
+                                "website_content_length": len(str(results)) if results else 0
+                            })
+                        
+                        st.sidebar.json(debug_info)
                     
                     if results and results.get('success'):
                         st.session_state.website_analysis_results = results

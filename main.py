@@ -88,6 +88,9 @@ def start_over():
         'company_image_presets'  # Keep company image settings
     ]
     
+    # Clear uploaded images first (before clearing session state)
+    clear_uploaded_images()
+    
     # Store preserved data
     preserved_data = {}
     for key in keys_to_preserve:
@@ -97,9 +100,6 @@ def start_over():
     # Clear all session state
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    
-    # Clear uploaded images
-    clear_uploaded_images()
     
     # Restore preserved data
     for key, value in preserved_data.items():
@@ -361,6 +361,95 @@ def handle_main_content():
         with st.expander("🔍 Debug Log (Click to expand)", expanded=False):
             for debug_msg in st.session_state.debug_log:
                 st.text(debug_msg)
+    
+    # Website analysis debug log
+    if st.session_state.get('website_debug_log'):
+        with st.expander("🌐 Website Analysis Debug Log", expanded=False):
+            for debug_msg in st.session_state.website_debug_log:
+                st.text(debug_msg)
+            if st.button("Clear Website Debug Log"):
+                st.session_state.website_debug_log = []
+                st.rerun()
+    
+    # Website Analysis Debug Section
+    with st.expander("🔧 Website Analysis Debug (Localhost vs Cloud)", expanded=False):
+        st.markdown("### Environment Analysis")
+        
+        # Import psutil for environment detection
+        try:
+            import psutil
+            is_cloud = psutil.cpu_count() <= 1
+            st.info(f"**Environment**: {'🌐 Streamlit Cloud' if is_cloud else '💻 Localhost'}")
+            st.text(f"CPU Count: {psutil.cpu_count()}")
+            if hasattr(psutil, 'virtual_memory'):
+                memory = psutil.virtual_memory()
+                st.text(f"Memory: {memory.total // (1024**3)} GB total, {memory.available // (1024**3)} GB available")
+        except ImportError:
+            st.warning("psutil not available for environment detection")
+        
+        # Current session analysis data
+        if st.session_state.get('website_analysis_results'):
+            st.markdown("### Last Website Analysis Results")
+            results = st.session_state.website_analysis_results
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.json({
+                    "success": results.get('success', False),
+                    "error": results.get('error', 'None'),
+                    "website_url": st.session_state.get('website_url', 'Not set')
+                })
+            
+            with col2:
+                if results.get('success') and results.get('business_info'):
+                    business_info = results['business_info']
+                    st.json({
+                        "extracted_fields": len(business_info),
+                        "company_name": business_info.get('company_name', 'Not extracted'),
+                        "business_type": business_info.get('business_type', 'Not extracted'),
+                        "target_audience": business_info.get('target_audience', 'Not extracted'),
+                        "description": business_info.get('description', 'Not extracted')[:100] + "..." if business_info.get('description') else 'Not extracted'
+                    })
+        
+        # Manual test section
+        st.markdown("### Manual Test")
+        test_url = st.text_input("Test URL:", placeholder="https://example.com")
+        
+        if st.button("🧪 Test Website Analysis"):
+            if test_url:
+                with st.spinner("Testing website analysis..."):
+                    try:
+                        # Get analyzer instance
+                        from modules.website_analysis import get_website_analyzer
+                        try:
+                            analyzer = get_website_analyzer(initialize_openai_client())
+                            st.success("✅ Using GPT-enhanced analysis")
+                        except:
+                            analyzer = get_website_analyzer()
+                            st.warning("⚠️ Using basic analysis")
+                        
+                        # Test the analysis
+                        import time
+                        start_time = time.time()
+                        test_results = analyzer.analyze_website(test_url)
+                        end_time = time.time()
+                        
+                        st.markdown(f"**Analysis Time**: {end_time - start_time:.2f} seconds")
+                        
+                        if test_results and test_results.get('success'):
+                            st.success("✅ Analysis successful!")
+                            st.json(test_results.get('business_info', {}))
+                        else:
+                            st.error("❌ Analysis failed")
+                            if test_results:
+                                st.error(f"Error: {test_results.get('error', 'Unknown error')}")
+                            
+                    except Exception as e:
+                        st.error(f"Test failed with exception: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
+            else:
+                st.warning("Please enter a URL to test")
 
 def main():
     """Main application entry point."""

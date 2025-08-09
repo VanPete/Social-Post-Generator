@@ -243,6 +243,17 @@ class SessionManager:
         """Load company profile data into session state."""
         profile = self.company_manager.get_profile(company_id)
         if profile:
+            # Clear widget keys to ensure they update with new session state values
+            widget_keys_to_clear = [
+                'business_name_input', 'business_type_input', 
+                'target_audience_input', 'product_name_input', 
+                'company_description_input'
+            ]
+            for key in widget_keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            # Load profile data into session state
             st.session_state['selected_company'] = company_id
             st.session_state['business_name'] = profile.name
             st.session_state['business_type'] = profile.business_type

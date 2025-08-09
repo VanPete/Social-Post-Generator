@@ -80,7 +80,8 @@ def show_image_upload_section():
         "Choose images",
         type=["png", "jpg", "jpeg", "webp"],
         accept_multiple_files=True,
-        help="Drag and drop or select images. These will be used as reference for caption generation."
+        help="Drag and drop or select images. These will be used as reference for caption generation.",
+        key="image_uploader"
     )
     
     if uploaded_files:
@@ -134,6 +135,11 @@ def clear_uploaded_images():
     # Clear debug logs
     if 'debug_logs' in st.session_state:
         del st.session_state.debug_logs
+    
+    # Clear file uploader widget key to reset the uploader
+    uploader_key = 'image_uploader'
+    if uploader_key in st.session_state:
+        del st.session_state[uploader_key]
 
 # Legacy compatibility functions (simplified)
 def get_image_processor():

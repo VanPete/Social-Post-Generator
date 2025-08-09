@@ -114,6 +114,11 @@ class WebsiteAnalyzer:
             if not url.startswith(('http://', 'https://')):
                 url = 'https://' + url
             
+            # Add debug logging
+            self._log_debug(f"🌐 Starting analysis for: {url}")
+            self._log_debug(f"🔧 Environment: {'Cloud' if self.is_cloud else 'Localhost'}")
+            self._log_debug(f"🤖 AI Mode: {'GPT' if self.openai_client else 'Basic'}")
+            
             # Show progress for large websites
             if hasattr(st, 'empty'):
                 progress_placeholder = st.empty()
@@ -128,11 +133,14 @@ class WebsiteAnalyzer:
                         with progress_placeholder:
                             st.info("☁️ Cloud environment detected - using optimized processing...")
                     
+                    self._log_debug("☁️ Attempting cloud-optimized quick processing")
                     content, final_url = self._fetch_with_headers_minimal(url)
                     if content:
+                        self._log_debug(f"✅ Content fetched successfully ({len(content)} chars)")
                         soup = BeautifulSoup(content, 'html.parser')
                         # Use basic extraction in cloud to avoid timeouts
                         business_info = self._extract_business_info_basic(soup, final_url)
+                        self._log_debug(f"📊 Extracted {len(business_info)} business fields")
                         
                         if hasattr(st, 'empty'):
                             progress_placeholder.empty()
@@ -142,8 +150,11 @@ class WebsiteAnalyzer:
                             'url': final_url,
                             'business_info': business_info
                         }
+                    else:
+                        self._log_debug("❌ No content returned from quick processing")
                 except Exception as cloud_error:
                     # Continue with regular flow if quick method fails
+                    self._log_debug(f"⚠️ Quick processing failed: {str(cloud_error)}")
                     if hasattr(st, 'empty'):
                         with progress_placeholder:
                             st.info("⚠️ Quick processing failed, trying comprehensive analysis...")
@@ -155,44 +166,64 @@ class WebsiteAnalyzer:
             
             # Strategy 1: Standard request with rotating headers
             try:
+                self._log_debug("📡 Attempting standard fetch with headers")
                 if hasattr(st, 'empty'):
                     with progress_placeholder:
                         st.info("📡 Fetching website content...")
                 content, final_url = self._fetch_with_headers(url)
+                self._log_debug(f"✅ Standard fetch successful ({len(content) if content else 0} chars)")
             except requests.exceptions.HTTPError as e:
+                self._log_debug(f"❌ Standard fetch failed: HTTP {e.response.status_code}")
                 if e.response.status_code == 403:
                     # Strategy 2: Try with session and delay
                     try:
+                        self._log_debug("🔄 Attempting session-based fetch")
                         content, final_url = self._fetch_with_session(url)
-                    except:
+                        self._log_debug(f"✅ Session fetch successful ({len(content) if content else 0} chars)")
+                    except Exception as session_error:
+                        self._log_debug(f"❌ Session fetch failed: {str(session_error)}")
                         # Strategy 3: Try different URL variations
+                        self._log_debug("🔄 Attempting URL variations")
                         content, final_url = self._try_url_variations(url)
+                        self._log_debug(f"✅ URL variation fetch result ({len(content) if content else 0} chars)")
                 else:
                     raise e
+            except Exception as general_error:
+                self._log_debug(f"❌ General fetch error: {str(general_error)}")
+                raise general_error
             
             if not content:
+                self._log_debug("❌ No content retrieved from any strategy")
                 return {
                     'success': False,
                     'error': "Could not access website content after trying multiple methods"
                 }
             
+            self._log_debug(f"🔍 Parsing HTML content ({len(content)} chars)")
             soup = BeautifulSoup(content, 'html.parser')
             
             # Extract raw content
             raw_content = self._extract_raw_content(soup)
+            self._log_debug(f"📝 Raw content extracted ({len(raw_content) if raw_content else 0} chars)")
             
             # Use GPT to enhance extraction if client available and not in cloud (to avoid timeouts)
             if self.openai_client and raw_content and not self.is_cloud:
+                self._log_debug("🤖 Using GPT-enhanced extraction (localhost)")
                 if hasattr(st, 'empty'):
                     with progress_placeholder:
                         st.info("🤖 Enhancing analysis with AI...")
                 business_info = self._extract_with_gpt(raw_content, final_url)
             else:
                 # Fallback to basic extraction (always use in cloud)
+                self._log_debug(f"📊 Using basic extraction ({'cloud environment' if self.is_cloud else 'no AI client'})")
                 if hasattr(st, 'empty'):
                     with progress_placeholder:
                         st.info("📊 Extracting business information...")
                 business_info = self._extract_business_info_basic(soup, final_url)
+            
+            self._log_debug(f"📊 Final business info extracted: {len(business_info)} fields")
+            for field, value in business_info.items():
+                self._log_debug(f"  {field}: {'✅' if value else '❌'} ({'present' if value else 'missing'})")
             
             # Clear progress indicator
             if hasattr(st, 'empty'):
@@ -212,6 +243,8 @@ class WebsiteAnalyzer:
             error_msg = f"Failed to fetch website: {str(e)}"
             if self.is_cloud:
                 error_msg += " (Cloud environment may have network restrictions)"
+            
+            self._log_debug(f"❌ Request exception: {error_msg}")
             return {
                 'success': False,
                 'error': error_msg
@@ -587,6 +620,17 @@ Example format:
                 return text
         
         return ""
+    
+    def _log_debug(self, message: str):
+        """Add debug message to session state for troubleshooting."""
+        try:
+            if hasattr(st, 'session_state'):
+                if 'website_debug_log' not in st.session_state:
+                    st.session_state.website_debug_log = []
+                st.session_state.website_debug_log.append(message)
+        except Exception:
+            # Silently fail if session state is not available
+            pass
 
 
 def get_website_analyzer(openai_client=None):
