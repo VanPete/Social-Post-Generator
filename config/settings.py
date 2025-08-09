@@ -84,11 +84,8 @@ SESSION_KEYS = {
     
     # Authentication related
     "AUTH_KEYS": [
-        'password_correct', 'password', 'current_image', 'generated_captions', 
-        'website_analysis', 'selected_web_image', 'auto_business', 
-        'selected_company_profile', 'selected_company_name', 'editing_company', 
-        'editing_profile', 'show_save_options', 'show_documentation', 
-        'show_feedback', 'image_selection_mode', 'clipboard_image', 'uploaded_image'
+        'password_correct', 'password', 'auth_timestamp', 'session_token', 
+        'last_activity', 'login_attempts'
     ]
 }
 

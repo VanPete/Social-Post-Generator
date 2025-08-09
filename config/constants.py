@@ -16,6 +16,15 @@ def get_app_password():
         # Fall back to environment variables (for local development)
         return os.getenv("APP_PASSWORD", "Jax2021")
 
+# === Authentication Settings ===
+AUTH_SETTINGS = {
+    "session_timeout_hours": 24,
+    "inactivity_timeout_minutes": 120,
+    "max_login_attempts": 5,
+    "show_session_info": True,
+    "remember_login": True
+}
+
 # === File Configurations ===
 # Data file configurations - These files persist across all users and sessions
 COMPANY_DATA_FILE = "company_profiles.json"  # Shared company directory across all users

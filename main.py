@@ -5,7 +5,6 @@ Social Post Generator - AI-Powered Social Media Content Creation
 
 import os
 import uuid
-from datetime import datetime
 import streamlit as st
 import openai
 from dotenv import load_dotenv
@@ -17,17 +16,16 @@ if 'session_id' not in st.session_state:
 # Load environment variables
 load_dotenv()
 
-# Import modules
+# Core module imports
 from modules.auth import check_password, show_logout_option
-from config.constants import OPENAI_MODELS
-from modules.companies import get_company_manager, get_session_manager
-from modules.website_analysis import get_website_analyzer
+from modules.companies import get_session_manager, get_company_manager
 from modules.image_processing import show_image_upload_section, clear_uploaded_images
 from modules.ui_components import get_ui_components
 from modules.business_info import business_info_section
-from modules.caption_generator import get_caption_generator, trigger_caption_generation
+from modules.caption_generator import trigger_caption_generation
+from config.constants import OPENAI_MODELS
 
-# Enhanced Streamlit UI components (with fallbacks)
+# Enhanced UI components with fallbacks
 try:
     from streamlit_extras.colored_header import colored_header
     from streamlit_extras.add_vertical_space import add_vertical_space
@@ -49,14 +47,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Get OpenAI API key - Support both environment variables and Streamlit secrets
+# === CORE FUNCTIONS ===
+
 def get_api_key():
     """Get OpenAI API key from environment variables or Streamlit secrets."""
-    # Try Streamlit secrets first (for cloud deployment)
     try:
         return st.secrets["OPENAI_API_KEY"]
     except (KeyError, FileNotFoundError, AttributeError):
-        # Fall back to environment variables (for local development)
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
             st.error("⚠️ **OPENAI_API_KEY not found!**\n\n"
@@ -67,7 +64,6 @@ def get_api_key():
             st.stop()
         return api_key
 
-# Initialize OpenAI client
 @st.cache_resource
 def initialize_openai_client():
     """Initialize OpenAI client with API key."""
@@ -75,9 +71,7 @@ def initialize_openai_client():
     if not api_key:
         st.error("OPENAI_API_KEY configuration error. Please check your setup.")
         st.stop()
-    
-    client = openai.OpenAI(api_key=api_key)
-    return client
+    return openai.OpenAI(api_key=api_key)
 
 def start_over():
     """Clear current session data while preserving saved company profiles."""
@@ -112,30 +106,23 @@ def start_over():
 
 def initialize_session_state():
     """Initialize Streamlit session state variables."""
-    if 'generated_captions' not in st.session_state:
-        st.session_state.generated_captions = []
+    default_values = {
+        'generated_captions': [],
+        'uploaded_images': [],
+        'image_count': 0,
+        'business_name': None,
+        'business_type': None,
+        'target_audience': None,
+        'product_name': None,
+        'call_to_action': True,
+        'website_url': None,
+        'openai_model': OPENAI_MODELS["standard"],
+        'website_analysis_results': None
+    }
     
-    session_keys = [
-        'business_name', 'business_type', 'target_audience', 'product_name', 
-        'call_to_action', 'website_url', 'openai_model', 'website_analysis_results'
-    ]
-    
-    if 'uploaded_images' not in st.session_state:
-        st.session_state.uploaded_images = []
-    if 'image_count' not in st.session_state:
-        st.session_state.image_count = 0
-    
-    for key in session_keys:
+    for key, default_value in default_values.items():
         if key not in st.session_state:
-            st.session_state[key] = None
-    
-    # Set default model to GPT-4o-mini
-    if 'openai_model' not in st.session_state or st.session_state.openai_model is None:
-        st.session_state.openai_model = OPENAI_MODELS["standard"]
-    
-    # Set call-to-action default to True
-    if 'call_to_action' not in st.session_state or st.session_state.call_to_action is None:
-        st.session_state.call_to_action = True
+            st.session_state[key] = default_value
 
 def create_sidebar():
     """Create the enhanced sidebar with company, AI model, and actions."""
@@ -149,134 +136,161 @@ def create_sidebar():
         
         st.markdown("---")
         
-        if OPTION_MENU_AVAILABLE:
-            selected_section = option_menu(
-                menu_title=None,
-                options=["Company", "AI Model", "Actions"],
-                icons=["building", "robot", "lightning"],
-                menu_icon="cast",
-                default_index=0,
-                orientation="vertical",
-                styles={
-                    "container": {"padding": "0!important", "background-color": "#fafafa"},
-                    "icon": {"color": "#4ECDC4", "font-size": "18px"},
-                    "nav-link": {
-                        "font-size": "14px",
-                        "text-align": "left",
-                        "margin": "0px",
-                        "--hover-color": "#eee",
-                    },
-                    "nav-link-selected": {"background-color": "#4ECDC4"},
-                },
-                key=f"sidebar_menu_{st.session_state['session_id']}"
-            )
-        else:
-            selected_section = st.selectbox(
-                "Navigation",
-                ["Company", "AI Model", "Actions"],
-                index=0
-            )
+        # Create navigation menu
+        selected_section = _create_navigation_menu()
         
-        # Company Profile Management Section
+        # Handle different sections
         if selected_section == "Company":
-            st.markdown("### Company Profile Management")
-            company_manager = get_company_manager()
-            
-            recent_companies = company_manager.get_recent_companies(limit=10)
-            if recent_companies:
-                company_options = [""] + [f"{comp['name']}" for comp in recent_companies]
-                selected_company = st.selectbox(
-                    "Load Existing Profile:",
-                    company_options,
-                    help="Quickly load a previously saved company profile"
-                )
-                
-                if selected_company and st.button("Load Profile", use_container_width=True):
-                    # Use the new company profile system
-                    from modules.companies import get_session_manager
-                    session_manager = get_session_manager()
-                    
-                    # Find profile by name (since old system used names)
-                    profiles = session_manager.company_manager.list_profiles()
-                    target_profile = None
-                    for profile in profiles:
-                        if profile.name == selected_company:
-                            target_profile = profile
-                            break
-                    
-                    if target_profile:
-                        if session_manager.load_company_to_session(target_profile.company_id):
-                            st.success(f"Loaded profile for {selected_company}")
-                            st.rerun()
-                        else:
-                            st.error("Failed to load profile")
-                    else:
-                        st.error("Profile not found")
-            
-            if st.session_state.get('business_name'):
-                if st.button("Save Current Profile", use_container_width=True):
-                    # Use the new company profile system instead of legacy format
-                    from modules.companies import get_session_manager
-                    session_manager = get_session_manager()
-                    
-                    # Create a new profile with current session data
-                    new_profile = session_manager.company_manager.create_profile(st.session_state.get('business_name', ''))
-                    
-                    # Save current session data to the new profile
-                    if session_manager.save_session_to_company(new_profile.company_id):
-                        st.success("Profile saved successfully!")
-                    else:
-                        st.error("Error saving profile")
-        
-        # AI Model Selection Section
+            _handle_company_section()
         elif selected_section == "AI Model":
-            st.markdown("### AI Model Selection")
-            default_choice = "GPT-4o-mini"
-            if st.session_state.get('openai_model') == OPENAI_MODELS["premium"]:
-                default_choice = "GPT-4o"
-            
-            model_choice = st.radio(
-                "Choose AI Model:",
-                ["GPT-4o-mini (Standard - Cost Effective)", "GPT-4o (Premium - Best Quality)"],
-                index=0 if "mini" in default_choice else 1,
-                help="GPT-4o-mini is faster and more cost-effective. GPT-4o provides higher quality."
-            )
-            st.session_state.openai_model = OPENAI_MODELS["premium"] if "Premium" in model_choice else OPENAI_MODELS["standard"]
-            
-            current_model = st.session_state.get('openai_model', OPENAI_MODELS["standard"])
-            st.caption(f"Currently using: {current_model}")
-            
-            if "mini" in current_model:
-                st.info("Cost-effective choice - great for most social media captions")
-            else:
-                st.info("Premium choice - highest quality output")
-        
-        # Quick Actions Section
+            _handle_ai_model_section()
         elif selected_section == "Actions":
-            st.markdown("### Additional Actions")
-            
-            st.warning("Reset All clears everything including saved profiles.")
-            if st.button("Reset All", use_container_width=True):
-                # Clear session state
-                for key in list(st.session_state.keys()):
-                    if key not in ['session_id', 'password_correct']:
-                        del st.session_state[key]
-                
-                # Clear all saved company profiles
-                try:
-                    from modules.companies import get_session_manager
-                    session_manager = get_session_manager()
-                    if session_manager.clear_all_profiles():
-                        st.success("All data and saved profiles cleared!")
-                    else:
-                        st.warning("Session data cleared, but there was an issue clearing saved profiles.")
-                except Exception as e:
-                    st.warning(f"Session data cleared, but error clearing profiles: {str(e)}")
-                
-                st.rerun()
+            _handle_actions_section()
         
         # Show logout option at bottom
         show_logout_option()
+
+def _create_navigation_menu():
+    """Create navigation menu with fallback options."""
+    if OPTION_MENU_AVAILABLE:
+        return option_menu(
+            menu_title=None,
+            options=["Company", "AI Model", "Actions"],
+            icons=["building", "robot", "lightning"],
+            menu_icon="cast",
+            default_index=0,
+            orientation="vertical",
+            styles={
+                "container": {"padding": "0!important", "background-color": "#fafafa"},
+                "icon": {"color": "#4ECDC4", "font-size": "18px"},
+                "nav-link": {
+                    "font-size": "14px",
+                    "text-align": "left",
+                    "margin": "0px",
+                    "--hover-color": "#eee",
+                },
+                "nav-link-selected": {"background-color": "#4ECDC4"},
+            },
+            key=f"sidebar_menu_{st.session_state['session_id']}"
+        )
+    else:
+        return st.selectbox(
+            "Navigation",
+            ["Company", "AI Model", "Actions"],
+            index=0
+        )
+
+def _handle_company_section():
+    """Handle company profile management section."""
+    st.markdown("### Company Profile Management")
+    company_manager = get_company_manager()
+    
+    recent_companies = company_manager.get_recent_companies(limit=10)
+    if recent_companies:
+        company_options = [""] + [f"{comp['name']}" for comp in recent_companies]
+        selected_company = st.selectbox(
+            "Load Existing Profile:",
+            company_options,
+            help="Quickly load a previously saved company profile"
+        )
+        
+        if selected_company and st.button("Load Profile", use_container_width=True):
+            session_manager = get_session_manager()
+            
+            # Find profile by name (since old system used names)
+            profiles = session_manager.company_manager.list_profiles()
+            target_profile = None
+            for profile in profiles:
+                if profile.name == selected_company:
+                    target_profile = profile
+                    break
+            
+            if target_profile:
+                if session_manager.load_company_to_session(target_profile.company_id):
+                    st.success(f"Loaded profile for {selected_company}")
+                    st.rerun()
+                else:
+                    st.error("Failed to load profile")
+            else:
+                st.error("Profile not found")
+    
+    if st.session_state.get('business_name'):
+        if st.button("Save Current Profile", use_container_width=True):
+            session_manager = get_session_manager()
+            
+            # Create a new profile with current session data
+            new_profile = session_manager.company_manager.create_profile(st.session_state.get('business_name', ''))
+            
+            # Save current session data to the new profile
+            if session_manager.save_session_to_company(new_profile.company_id):
+                st.success("Profile saved successfully!")
+            else:
+                st.error("Error saving profile")
+
+def _handle_ai_model_section():
+    """Handle AI model selection section."""
+    st.markdown("### AI Model Selection")
+    default_choice = "GPT-4o-mini"
+    if st.session_state.get('openai_model') == OPENAI_MODELS["premium"]:
+        default_choice = "GPT-4o"
+    
+    model_choice = st.radio(
+        "Choose AI Model:",
+        ["GPT-4o-mini (Standard - Cost Effective)", "GPT-4o (Premium - Best Quality)"],
+        index=0 if "mini" in default_choice else 1,
+        help="GPT-4o-mini is faster and more cost-effective. GPT-4o provides higher quality."
+    )
+    st.session_state.openai_model = OPENAI_MODELS["premium"] if "Premium" in model_choice else OPENAI_MODELS["standard"]
+    
+    current_model = st.session_state.get('openai_model', OPENAI_MODELS["standard"])
+    st.caption(f"Currently using: {current_model}")
+    
+    if "mini" in current_model:
+        st.info("Cost-effective choice - great for most social media captions")
+    else:
+        st.info("Premium choice - highest quality output")
+
+def _handle_actions_section():
+    """Handle additional actions section."""
+    st.markdown("### Additional Actions")
+    
+    # Session information (for debugging/monitoring)
+    if st.checkbox("Show Session Info", value=False, help="Display authentication session details"):
+        from modules.auth import get_session_info
+        session_info = get_session_info()
+        
+        if session_info.get("authenticated"):
+            st.json({
+                "🟢 Status": "Authenticated",
+                "⏰ Login Time": session_info.get("login_time", "Unknown"),
+                "📊 Session Duration": f"{session_info.get('session_duration_hours', 0):.1f} hours",
+                "🔄 Last Activity": session_info.get("last_activity", "Unknown"),
+                "⏳ Minutes Since Activity": f"{session_info.get('minutes_since_activity', 0):.1f}",
+                "⏱️ Expires In": f"{session_info.get('expires_in_hours', 0):.1f} hours"
+            })
+        else:
+            st.json({"🔴 Status": "Not Authenticated"})
+    
+    st.markdown("---")
+    
+    st.warning("Reset All clears everything including saved profiles.")
+    if st.button("Reset All", use_container_width=True):
+        # Clear session state
+        for key in list(st.session_state.keys()):
+            if key not in ['session_id', 'password_correct']:
+                del st.session_state[key]
+        
+        # Clear all saved company profiles
+        try:
+            session_manager = get_session_manager()
+            if session_manager.clear_all_profiles():
+                st.success("All data and saved profiles cleared!")
+            else:
+                st.warning("Session data cleared, but there was an issue clearing saved profiles.")
+        except Exception as e:
+            st.warning(f"Session data cleared, but error clearing profiles: {str(e)}")
+        
+        st.rerun()
 
 def display_page_header():
     """Display the main page header."""

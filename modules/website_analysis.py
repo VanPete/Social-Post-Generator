@@ -109,7 +109,6 @@ class WebsiteAnalyzer:
             }
         
         # Log the User-Agent being used for debugging
-        self._log_debug(f"🔧 Using User-Agent: {headers['User-Agent'][:50]}...")
         return headers
     
     def analyze_website(self, url: str) -> Dict[str, Any]:
@@ -119,84 +118,71 @@ class WebsiteAnalyzer:
             if not url.startswith(('http://', 'https://')):
                 url = 'https://' + url
             
-            # Add debug logging
-            self._log_debug(f"🌐 Starting analysis for: {url}")
-            self._log_debug(f"🔧 Environment: {'Cloud' if self.is_cloud else 'Localhost'}")
-            self._log_debug(f"🤖 AI Mode: {'GPT' if self.openai_client else 'Basic'}")
-            
-            # Show progress for large websites
-            if hasattr(st, 'empty'):
-                progress_placeholder = st.empty()
-                with progress_placeholder:
-                    st.info("🔍 Analyzing website... Large sites may take up to 15 seconds")
-            
             # Cloud-specific optimization: try quick basic extraction first
             if self.is_cloud:
                 try:
-                    # Quick attempt with minimal processing for cloud
-                    if hasattr(st, 'empty'):
-                        with progress_placeholder:
-                            st.info("☁️ Cloud environment detected - using optimized processing...")
-                    
-                    self._log_debug("☁️ Attempting cloud-optimized quick processing")
                     content, final_url = self._fetch_with_headers_minimal(url)
                     if content:
-                        self._log_debug(f"✅ Content fetched successfully ({len(content)} chars)")
                         soup = BeautifulSoup(content, 'html.parser')
-                        # Use basic extraction in cloud to avoid timeouts
                         business_info = self._extract_business_info_basic(soup, final_url)
-                        self._log_debug(f"📊 Extracted {len(business_info)} business fields")
-                        
-                        if hasattr(st, 'empty'):
-                            progress_placeholder.empty()
                         
                         return {
                             'success': True,
                             'url': final_url,
                             'business_info': business_info
                         }
-                    else:
-                        self._log_debug("❌ No content returned from quick processing")
-                except Exception as cloud_error:
-                    # Continue with regular flow if quick method fails
-                    self._log_debug(f"⚠️ Quick processing failed: {str(cloud_error)}")
-                    if hasattr(st, 'empty'):
-                        with progress_placeholder:
-                            st.info("⚠️ Quick processing failed, trying comprehensive analysis...")
-                    pass
+                except Exception:
+                    pass  # Continue with regular flow if quick method fails
             
             # Try multiple strategies to bypass 403 errors
             content = None
             final_url = url
             
-            # Use the same simple approach as the working test script
+            # Use simple approach
             try:
-                self._log_debug("📡 Attempting basic fetch (simplified approach)")
-                if hasattr(st, 'empty'):
-                    with progress_placeholder:
-                        st.info("📡 Fetching website content...")
-                
-                # Exact same approach as test_extraction.py
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 }
                 response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
                 response.raise_for_status()
-                content = response.text  # Use decoded text like test script
+                content = response.text
                 final_url = response.url
-                self._log_debug(f"✅ Basic fetch successful ({len(content)} chars)")
                 
-            except Exception as e:
-                self._log_debug(f"❌ Basic fetch failed: {str(e)}")
-                # Only if basic fails, try fallback
+            except Exception:
                 content = None
             
             if not content:
-                self._log_debug("❌ No content retrieved")
                 return {
                     'success': False,
                     'error': "Could not access website content"
                 }
+            
+            # Parse content with BeautifulSoup
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            # Extract business information based on available method
+            if self.openai_client:
+                business_info = self._extract_business_info_gpt(soup, final_url)
+            else:
+                business_info = self._extract_business_info_basic(soup, final_url)
+            
+            return {
+                'success': True,
+                'url': final_url,
+                'business_info': business_info,
+                'content_length': len(content)
+            }
+            
+        except requests.RequestException as e:
+            return {
+                'success': False,
+                'error': f"Request failed: {str(e)}"
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Analysis failed: {str(e)}"
+            }
             
             self._log_debug(f"🔍 Parsing HTML content ({len(content)} chars)")
             
@@ -239,40 +225,24 @@ class WebsiteAnalyzer:
                 self._log_debug(f"  {field}: {'✅' if value else '❌'} ({'present' if value else 'missing'})")
             
             # Clear progress indicator
-            if hasattr(st, 'empty'):
-                progress_placeholder.empty()
+            pass
             
             return {
                 'success': True,
                 'url': final_url,
-                'business_info': business_info
+                'business_info': business_info,
+                'content_length': len(content)
             }
             
         except requests.RequestException as e:
-            # Clear progress indicator on error
-            if hasattr(st, 'empty') and 'progress_placeholder' in locals():
-                progress_placeholder.empty()
-            
-            error_msg = f"Failed to fetch website: {str(e)}"
-            if self.is_cloud:
-                error_msg += " (Cloud environment may have network restrictions)"
-            
-            self._log_debug(f"❌ Request exception: {error_msg}")
             return {
                 'success': False,
-                'error': error_msg
+                'error': f"Request failed: {str(e)}"
             }
         except Exception as e:
-            # Clear progress indicator on error
-            if hasattr(st, 'empty') and 'progress_placeholder' in locals():
-                progress_placeholder.empty()
-            
-            error_msg = f"Error analyzing website: {str(e)}"
-            if self.is_cloud:
-                error_msg += " (Cloud processing timeout or resource limit)"
             return {
                 'success': False,
-                'error': error_msg
+                'error': f"Analysis failed: {str(e)}"
             }
     
     def _fetch_with_headers(self, url: str) -> tuple:
