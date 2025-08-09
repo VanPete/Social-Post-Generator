@@ -345,10 +345,12 @@ def handle_main_content():
         "Include a call-to-action in captions?", 
         value=bool(st.session_state.get('call_to_action', True))
     )
+    st.session_state['include_cta'] = st.session_state['call_to_action']
     
     if can_generate:
         selected_platform, char_limit = ui.create_platform_selector()
         st.session_state['platform_char_limit'] = char_limit
+        st.session_state['selected_platform'] = selected_platform
         
         generate_clicked = st.button(
             "Generate Captions", 

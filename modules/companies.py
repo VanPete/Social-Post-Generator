@@ -87,7 +87,7 @@ class CompanyManager:
             self.profiles = {}
             self.save_profiles()
         except json.JSONDecodeError:
-            print(f"Error loading {self.profiles_file}. Starting with empty profiles.")
+            # Handle corrupted JSON file
             self.profiles = {}
     
     def save_profiles(self):

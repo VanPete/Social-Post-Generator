@@ -41,8 +41,14 @@ class UIComponents:
         # Display character limit info
         if char_limit:
             st.markdown(f"**Character limit:** {char_limit}")
+        elif selected_platform == "4-5 sentences (Default)":
+            st.markdown("**Length:** 4-5 sentences for comprehensive engagement")
+        elif selected_platform == "3-4 sentences":
+            st.markdown("**Length:** 3-4 sentences for detailed engagement")
+        elif selected_platform == "2-3 sentences":
+            st.markdown("**Length:** 2-3 sentences for optimal engagement")
         else:
-            st.markdown("**Length:** Character fitting for all social platforms")
+            st.markdown("**Length:** Appropriate length for all social platforms")
         
         return selected_platform, char_limit
     

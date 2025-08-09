@@ -148,16 +148,17 @@ Target Audience: {target_audience}"""
         if platform and platform not in ["All Social Platforms", "2-3 sentences", "3-4 sentences", "4-5 sentences (Default)"]:
             prompt += f"\nPlatform: {platform}"
         
-        if char_limit:
-            prompt += f"\nCharacter Limit: {char_limit} characters"
-        elif platform == "2-3 sentences":
-            prompt += f"\nLength: 2-3 sentences for optimal engagement"
+        # Handle sentence-based requirements first (higher priority)
+        if platform == "2-3 sentences":
+            prompt += f"\nLength: Exactly 2-3 sentences for optimal engagement"
         elif platform == "3-4 sentences":
-            prompt += f"\nLength: 3-4 sentences for detailed engagement"
+            prompt += f"\nLength: Exactly 3-4 sentences for detailed engagement"
         elif platform == "4-5 sentences (Default)":
-            prompt += f"\nLength: 4-5 sentences for comprehensive engagement"
+            prompt += f"\nLength: Exactly 4-5 sentences for comprehensive engagement"
+        elif char_limit:
+            prompt += f"\nCharacter Limit: {char_limit} characters"
         else:
-            prompt += f"\nLength: Character fitting for all social platforms"
+            prompt += f"\nLength: Appropriate length for all social platforms"
         
         prompt += f"""
 
@@ -167,7 +168,8 @@ Requirements:
 - Target the specified audience
 - Make each caption unique and compelling
 - NO hashtags or emojis
-- Clean, readable format"""
+- Clean, readable format
+- IMPORTANT: Strictly follow the specified length requirement above"""
         
         if include_cta:
             prompt += "\n- Include a clear call-to-action"

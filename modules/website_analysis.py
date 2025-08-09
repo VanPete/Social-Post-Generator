@@ -438,7 +438,6 @@ Example format:
             return business_info
             
         except Exception as e:
-            print(f"GPT extraction failed: {e}")
             # Fallback to basic extraction
             return self._extract_business_info_basic_from_content(content)
     
